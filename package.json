@@ -1,0 +1,33 @@
+{
+  "name": "story-ai",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "vitest",
+    "test:agentic": "vitest services/resolver/tests/agentic-compat.e2e.spec.ts --run",
+    "start:resolver": "tsx services/resolver/src/server.ts",
+    "start:orchestrator": "tsx services/agent-orchestrator/src/index.ts",
+    "start:demo": "pnpm start:resolver"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1",
+    "@types/node": "^24.4.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "optionalDependencies": {
+    "@google-cloud/text-to-speech": "^6.0.0",
+    "@google-cloud/aiplatform": "^3.0.0"
+  },
+  "dependencies": {
+    "@google/adk": "^0.3.0",
+    "@grpc/grpc-js": "^1.14.1",
+    "@grpc/proto-loader": "^0.8.0",
+    "ajv": "^8.17.1",
+    "dotenv": "^16.4.5",
+    "tsx": "^4.20.6",
+    "zod": "^3.23.8",
+    "ws": "^8.18.3"
+  }
+}

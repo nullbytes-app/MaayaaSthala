@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package stagegateway;
+
+message StageCommandEnvelope {
+  string json = 1;
+}
+
+message IngestAck {
+  uint32 accepted = 1;
+  uint32 dropped = 2;
+}
+
+service StageGateway {
+  rpc StreamStageCommands(stream StageCommandEnvelope) returns (IngestAck);
+}

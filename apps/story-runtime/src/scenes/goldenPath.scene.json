@@ -1,0 +1,45 @@
+{
+  "sceneId": "goldenPath",
+  "cast": [
+    {
+      "charId": "hero",
+      "resolvedArtifactId": "hero_raju_v2"
+    },
+    {
+      "charId": "shadowDouble",
+      "resolvedArtifactId": "shadow_double_v1"
+    }
+  ],
+  "commands": [
+    {
+      "beat": 0,
+      "lane": "narration",
+      "opcode": "NARRATE",
+      "payload": {
+        "storyState": "invocation",
+        "oathDelta": 5
+      }
+    },
+    {
+      "beat": 1,
+      "lane": "narration",
+      "opcode": "NARRATE",
+      "payload": {
+        "storyState": "temptation_peak",
+        "shadowDouble": true,
+        "oathDelta": -35,
+        "desireDelta": 70
+      }
+    },
+    {
+      "beat": 2,
+      "lane": "narration",
+      "opcode": "NARRATE",
+      "payload": {
+        "storyState": "restoration",
+        "oathDelta": 20,
+        "desireDelta": -30
+      }
+    }
+  ]
+}

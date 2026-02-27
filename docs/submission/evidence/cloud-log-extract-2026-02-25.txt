@@ -1,0 +1,17 @@
+Source: gcloud logging read (Cloud Run revision logs)
+Service: story-ai-resolver
+Region: asia-south1
+
+--- ADK model invocation lines ---
+2026-02-25T12:06:39.882512Z [ADK INFO] Sending out request, model: gemini-2.5-flash, backend: VERTEX_AI, stream: false
+2026-02-25T12:06:33.753759Z [ADK INFO] Sending out request, model: gemini-2.5-flash, backend: VERTEX_AI, stream: false
+
+--- ADK event payload excerpt (contains storyId) ---
+2026-02-25T12:06:39.882147Z [ADK INFO] event: ... storyId: devpost_bundle_1772021193623 ...
+2026-02-25T12:06:33.753273Z [ADK INFO] event: ... storyId: devpost_bundle_1772021193623 ...
+
+--- Warning query result ---
+Command run:
+gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=story-ai-resolver AND textPayload:\"resolver.http.route.warning\" AND textPayload:\"devpost_bundle_1772021193623\"" --limit=10 --format="value(timestamp,textPayload)"
+
+Result: no lines returned.

@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://story-ai/specs/stage-command.v1.schema.json",
+  "title": "StageCommandV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "eventId",
+    "sceneId",
+    "beat",
+    "lane",
+    "opcode",
+    "target",
+    "payload"
+  ],
+  "properties": {
+    "version": { "const": "1.0" },
+    "eventId": { "type": "string", "minLength": 1 },
+    "sceneId": { "type": "string", "minLength": 1 },
+    "beat": { "type": "integer", "minimum": 0 },
+    "wallTimeMs": { "type": "integer", "minimum": 0 },
+    "lane": {
+      "type": "string",
+      "enum": ["puppet", "audio", "narration", "control"]
+    },
+    "opcode": {
+      "type": "string",
+      "enum": [
+        "SCENE_OPEN",
+        "ARTIFACT_BIND",
+        "PLACE",
+        "GESTURE",
+        "SPEAK",
+        "NARRATE",
+        "LIGHT",
+        "SCORE",
+        "PROP",
+        "FRAME",
+        "BARGE_IN",
+        "SCENE_CLOSE"
+      ]
+    },
+    "target": {
+      "type": "object",
+      "required": ["artifactId"],
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": { "type": "string", "minLength": 1 },
+        "partId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "payload": { "type": "object" },
+    "fallback": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["none", "auto_correct", "drop"]
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "promptTraceId": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "opcode": { "const": "GESTURE" } } },
+      "then": {
+        "properties": {
+          "lane": { "const": "puppet" },
+          "payload": {
+            "type": "object",
+            "required": ["gesture"],
+            "additionalProperties": false,
+            "properties": {
+              "gesture": { "type": "string", "minLength": 1 },
+              "intensity": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "opcode": { "const": "SPEAK" } } },
+      "then": {
+        "properties": {
+          "lane": { "const": "audio" },
+          "payload": {
+            "type": "object",
+            "required": ["text"],
+            "additionalProperties": false,
+            "properties": {
+              "text": { "type": "string", "minLength": 1 },
+              "voiceProfile": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "opcode": { "const": "SCENE_OPEN" } } },
+      "then": {
+        "properties": {
+          "lane": {
+            "type": "string",
+            "enum": ["narration", "control"]
+          },
+          "payload": {
+            "type": "object",
+            "required": ["rasa", "tala"],
+            "additionalProperties": false,
+            "properties": {
+              "rasa": { "type": "string", "minLength": 1 },
+              "tala": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "opcode": { "const": "NARRATE" } } },
+      "then": {
+        "properties": {
+          "lane": { "const": "narration" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "opcode": { "const": "SCENE_CLOSE" } } },
+      "then": {
+        "properties": {
+          "lane": { "const": "control" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "opcode": { "const": "BARGE_IN" } } },
+      "then": {
+        "properties": {
+          "lane": { "const": "control" },
+          "payload": {
+            "type": "object",
+            "required": ["chorusRole", "intent", "windowStart", "windowEnd"],
+            "additionalProperties": false,
+            "properties": {
+              "chorusRole": {
+                "type": "string",
+                "enum": ["elder", "trickster", "witness", "audience"]
+              },
+              "intent": {
+                "type": "string",
+                "enum": ["warn", "tempt", "support"]
+              },
+              "windowStart": { "type": "integer", "minimum": 0 },
+              "windowEnd": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

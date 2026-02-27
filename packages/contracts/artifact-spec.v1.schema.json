@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://story-ai/specs/artifact-spec.v1.schema.json",
+  "title": "ArtifactSpecV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "artifactId",
+    "displayName",
+    "style",
+    "parts",
+    "defaultPose",
+    "capabilities"
+  ],
+  "properties": {
+    "version": { "const": "1.0" },
+    "artifactId": {
+      "type": "string",
+      "pattern": "^[a-z0-9_\\-]+$"
+    },
+    "displayName": { "type": "string", "minLength": 1 },
+    "style": {
+      "type": "object",
+      "required": ["tradition", "palette"],
+      "additionalProperties": false,
+      "properties": {
+        "tradition": {
+          "type": "string",
+          "enum": ["leather-shadow", "tholu-bommalata-inspired"]
+        },
+        "palette": { "type": "array", "items": { "type": "string" } },
+        "motifs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "parts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "partId",
+          "role",
+          "assetRef",
+          "anchor",
+          "pivot",
+          "zIndex",
+          "constraints"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "partId": {
+            "type": "string",
+            "pattern": "^[a-z0-9_\\-]+$"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "head",
+              "face",
+              "torso",
+              "left_arm",
+              "right_arm",
+              "left_hand",
+              "right_hand",
+              "left_leg",
+              "right_leg",
+              "prop"
+            ]
+          },
+          "assetRef": {
+            "type": "string",
+            "description": "URI or storage key for part image"
+          },
+          "anchor": {
+            "type": "object",
+            "required": ["x", "y"],
+            "additionalProperties": false,
+            "properties": {
+              "x": { "type": "number" },
+              "y": { "type": "number" }
+            }
+          },
+          "pivot": {
+            "type": "object",
+            "required": ["x", "y"],
+            "additionalProperties": false,
+            "properties": {
+              "x": { "type": "number" },
+              "y": { "type": "number" }
+            }
+          },
+          "zIndex": { "type": "integer" },
+          "constraints": {
+            "type": "object",
+            "required": ["rotationDegMin", "rotationDegMax"],
+            "additionalProperties": false,
+            "properties": {
+              "rotationDegMin": { "type": "number" },
+              "rotationDegMax": { "type": "number" },
+              "translateXMax": { "type": "number", "default": 0 },
+              "translateYMax": { "type": "number", "default": 0 },
+              "scaleMin": { "type": "number", "default": 1 },
+              "scaleMax": { "type": "number", "default": 1 }
+            }
+          },
+          "tags": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "defaultPose": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "rotationDeg": { "type": "number" },
+          "translateX": { "type": "number" },
+          "translateY": { "type": "number" },
+          "scale": { "type": "number" }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "required": ["gestures", "supportsShadowDouble"],
+      "additionalProperties": false,
+      "properties": {
+        "gestures": { "type": "array", "items": { "type": "string" } },
+        "supportsShadowDouble": { "type": "boolean" },
+        "voiceProfiles": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

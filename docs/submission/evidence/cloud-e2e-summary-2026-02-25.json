@@ -1,0 +1,37 @@
+{
+  "timestamp": "2026-02-25T12:06:46.831Z",
+  "serviceUrl": "https://story-ai-resolver-xchyzh6yua-el.a.run.app",
+  "storyId": "devpost_bundle_1772021193623",
+  "prepareStatus": 200,
+  "generateStatus": 200,
+  "approveStatus": 200,
+  "runStatus": 200,
+  "prepareCharacterIds": [
+    "raju",
+    "elder"
+  ],
+  "generatedArtifactId": "elder_gen_v1",
+  "approveSelections": [
+    {
+      "charId": "raju",
+      "artifactId": "hero_raju_v2",
+      "source": "existing"
+    },
+    {
+      "charId": "elder",
+      "artifactId": "elder_gen_v1",
+      "source": "generated"
+    }
+  ],
+  "ack": {
+    "accepted": 6,
+    "dropped": 0
+  },
+  "replayEventCount": 6,
+  "castInReplay": [
+    "hero_raju_v2",
+    "elder_gen_v1",
+    "shadow_double_v1"
+  ],
+  "statusAll200": true
+}

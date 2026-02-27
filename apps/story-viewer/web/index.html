@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Story AI — Interactive Puppet Theatre</title>
+    <link rel="stylesheet" href="/viewer/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="app-header__left">
+        <h1>Story AI</h1>
+        <p class="subtitle">Agentic Indian Puppet Theatre</p>
+      </div>
+      <div class="app-header__tabs">
+        <button class="tab-btn tab-btn--active" id="tab-chat" type="button">
+          💬 Chat
+        </button>
+        <button class="tab-btn" id="tab-studio" type="button">
+          🎨 Casting Studio
+        </button>
+      </div>
+    </header>
+
+    <main class="layout layout--chat" id="main-layout">
+
+      <!-- Chat Panel (Conversation Mode) -->
+      <section class="panel panel--chat" id="chat-panel">
+        <div class="chat-header">
+          <h2>Kahani — Your Storytelling Guide</h2>
+          <div class="chat-connection-status" id="chat-status">
+            <span class="status-dot status-dot--disconnected" id="status-dot"></span>
+            <span id="status-label">Connecting...</span>
+          </div>
+        </div>
+
+        <div class="chat-messages" id="chat-messages" role="log" aria-live="polite">
+          <div class="chat-welcome">
+            <div class="chat-welcome__icon">🎭</div>
+            <p>
+              <strong>Namaste!</strong> I am Kahani, your storytelling companion.<br>
+              Ask me to tell you a Chandamama tale, a Panchatantra fable,
+              or any Indian folk story — and I will bring it to life with
+              animated puppets, narration, and music.
+            </p>
+            <p class="chat-welcome__hint">
+              Try: <em>"Tell me a Chandamama story about a brave girl"</em>
+            </p>
+          </div>
+        </div>
+
+        <form class="chat-input-form" id="chat-form" autocomplete="off">
+          <input
+            id="chat-input"
+            type="text"
+            placeholder="Ask for a story..."
+            autocomplete="off"
+            aria-label="Chat message"
+          />
+          <button type="submit" class="btn-send" aria-label="Send">
+            ➤
+          </button>
+        </form>
+      </section>
+
+      <!-- Stage Canvas Panel -->
+      <section class="panel panel--stage" id="canvas-panel">
+        <div class="stage-header">
+          <h2>Stage</h2>
+          <div class="stage-controls">
+            <button id="stage-pause" type="button" class="btn-stage">⏸ Pause</button>
+            <button id="stage-reset" type="button" class="btn-stage">↺ Reset</button>
+          </div>
+        </div>
+        <canvas id="stage-canvas" width="720" height="420"></canvas>
+        <div class="stage-timeline" id="timeline-output">Stage ready. Start a conversation to begin.</div>
+      </section>
+
+    </main>
+
+    <!-- Casting Studio (hidden by default — accessed via tab) -->
+    <main class="layout layout--studio hidden" id="studio-layout">
+      <section class="panel" id="controls-panel">
+        <h2>Casting Studio</h2>
+        <h3>Story Draft</h3>
+        <label for="story-id-input">Story ID</label>
+        <input id="story-id-input" type="text" autocomplete="off" />
+        <label for="style-input">Style</label>
+        <input id="style-input" type="text" autocomplete="off" />
+        <label for="language-input">Language</label>
+        <input id="language-input" type="text" autocomplete="off" />
+        <label for="story-text-input">Story Text</label>
+        <textarea id="story-text-input" rows="4"></textarea>
+        <label for="story-script-input">Natya Script</label>
+        <textarea id="story-script-input" rows="9"></textarea>
+        <label for="mode-select">Playback Mode</label>
+        <select id="mode-select">
+          <option value="replay" selected>Replay</option>
+          <option value="live">Live (simulated)</option>
+        </select>
+        <button id="load-demo" type="button">Load Story</button>
+        <button id="generate-cast" type="button">Generate Cast</button>
+        <button id="play" type="button">Play</button>
+        <button id="pause" type="button">Pause</button>
+        <h3>Casting</h3>
+        <div id="casting-options"></div>
+        <pre id="casting-output">Casting not loaded yet.</pre>
+      </section>
+
+      <section class="panel" id="studio-canvas-panel">
+        <h2>Stage</h2>
+        <canvas id="studio-stage-canvas" width="720" height="420"></canvas>
+      </section>
+
+      <section class="panel" id="timeline-panel">
+        <h2>Timeline</h2>
+        <pre id="studio-timeline-output">No timeline loaded yet.</pre>
+      </section>
+    </main>
+
+    <script src="/viewer/main.js" type="module"></script>
+  </body>
+</html>

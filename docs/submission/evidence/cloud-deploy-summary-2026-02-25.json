@@ -1,0 +1,37 @@
+{
+  "projectId": "sacred-amp-386406",
+  "region": "asia-south1",
+  "serviceName": "story-ai-resolver",
+  "status": {
+    "url": "https://story-ai-resolver-xchyzh6yua-el.a.run.app",
+    "latestReadyRevisionName": "story-ai-resolver-00009-stx",
+    "traffic": [
+      {
+        "revisionName": "story-ai-resolver-00009-stx",
+        "percent": 100,
+        "latestRevision": true
+      }
+    ]
+  },
+  "env": {
+    "AGENTIC_ANALYZE_ENABLED": "true",
+    "AGENTIC_CASTING_ENABLED": "true",
+    "AGENTIC_RUN_ENABLED": "true",
+    "AGENTIC_MODEL": "gemini-2.5-flash",
+    "GOOGLE_CLOUD_PROJECT": "sacred-amp-386406",
+    "GOOGLE_CLOUD_LOCATION": "asia-south1",
+    "GOOGLE_GENAI_USE_VERTEXAI": "true",
+    "MODEL_GATEWAY_MAX_JSON_ATTEMPTS": "3",
+    "MODEL_GATEWAY_RETRY_BACKOFF_MS": "200"
+  },
+  "billing": {
+    "billingAccountName": "billingAccounts/0113CD-670AD1-075520",
+    "billingEnabled": true
+  },
+  "enabledApis": [
+    "aiplatform.googleapis.com",
+    "artifactregistry.googleapis.com",
+    "cloudbuild.googleapis.com",
+    "run.googleapis.com"
+  ]
+}
