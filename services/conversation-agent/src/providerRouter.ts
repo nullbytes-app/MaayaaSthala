@@ -25,6 +25,8 @@ export type RouterOptions = {
   /** GCP project for Vertex AI image generation. */
   gcpProject?: string;
   gcpLocation?: string;
+  /** Gemini API key for Gemini image generation fallback. */
+  apiKey?: string;
 };
 
 /**
@@ -46,10 +48,10 @@ const tryStitchStub = async (
     parts: {
       head: `/generated/${assetId}_head.png`,
       torso: `/generated/${assetId}_torso.png`,
-      left_arm: `/generated/${assetId}_left_arm.png`,
-      right_arm: `/generated/${assetId}_right_arm.png`,
-      left_leg: `/generated/${assetId}_left_leg.png`,
-      right_leg: `/generated/${assetId}_right_leg.png`
+      leftArm: `/generated/${assetId}_left_arm.png`,
+      rightArm: `/generated/${assetId}_right_arm.png`,
+      leftLeg: `/generated/${assetId}_left_leg.png`,
+      rightLeg: `/generated/${assetId}_right_leg.png`
     },
     source: "stitch_stub"
   };
@@ -85,6 +87,55 @@ const tryStitchScreenFromText = async (
 };
 
 /**
+ * Attempt Gemini image generation for character portraits.
+ * Uses gemini-2.0-flash-exp with IMAGE response modality.
+ * Falls between Vertex AI and SVG placeholder.
+ */
+const tryGeminiCharacterImage = async (
+  request: CharacterGenerationRequest,
+  apiKey: string
+): Promise<CharacterGenerationResult | null> => {
+  try {
+    const { GoogleGenAI } = await import("@google/genai");
+    const genAI = new GoogleGenAI({ apiKey });
+
+    const prompt =
+      `2D cartoon character for animated show: ${request.name}, ${request.archetype}. ` +
+      `${request.description}. Modern cartoon style, bright vibrant colors, clean bold outlines, ` +
+      `simple shapes, expressive face, full body front view, standing T-pose with arms out and legs slightly apart, ` +
+      `isolated on solid white background #FFFFFF, no shadows, no scenery, no ground, PNG sprite style.`;
+
+    const response = await genAI.models.generateContent({
+      model: "gemini-2.0-flash-exp-image-generation",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        responseModalities: ["IMAGE", "TEXT"]
+      }
+    });
+
+    const candidates = response.candidates ?? [];
+    for (const candidate of candidates) {
+      for (const part of candidate.content?.parts ?? []) {
+        if (part.inlineData?.mimeType?.startsWith("image/") && part.inlineData.data) {
+          const assetId = `gemini_${request.charId}_${Date.now()}`;
+          return {
+            assetId,
+            name: request.name,
+            previewUrl: `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`,
+            hasParts: false,
+            source: "vertex_ai" // Reuse vertex_ai source label for compatibility
+          };
+        }
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Attempt Vertex AI image generation for illustrations.
  * Returns a full image URL — no parts manifest.
  */
@@ -102,9 +153,10 @@ const tryVertexAiImage = async (
 
     const endpoint = `projects/${gcpProject}/locations/${gcpLocation}/publishers/google/models/imagegeneration@006`;
     const prompt =
-      `Indian puppet theatre character: ${request.name}, ${request.archetype} archetype. ` +
-      `${request.description}. Traditional Indian illustration style, warm earthy colors, ` +
-      `detailed costume, suitable for shadow puppet theatre. Clean background.`;
+      `2D cartoon character for animated show: ${request.name}, ${request.archetype} archetype. ` +
+      `${request.description}. Modern cartoon style, bright vibrant colors, clean bold outlines, ` +
+      `simple shapes, expressive face, full body front view, standing T-pose with arms out and legs slightly apart, ` +
+      `isolated on solid white background #FFFFFF, no shadows, no scenery, no ground, PNG sprite style.`;
 
     const [response] = await client.predict({
       endpoint,
@@ -132,6 +184,81 @@ const tryVertexAiImage = async (
       previewUrl: `data:image/png;base64,${imageData}`,
       hasParts: false,
       source: "vertex_ai"
+    };
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Generate 6 body-part images for a character in parallel using Gemini.
+ * Each part is prompted with cartoon style on a solid white background for client-side color-keying.
+ * Returns a parts object only if all 6 images succeed; otherwise returns null.
+ */
+const tryGeminiPartGeneration = async (
+  request: CharacterGenerationRequest,
+  apiKey: string
+): Promise<{ head: string; torso: string; leftArm: string; rightArm: string; leftLeg: string; rightLeg: string } | null> => {
+  try {
+    const { GoogleGenAI } = await import("@google/genai");
+    const genAI = new GoogleGenAI({ apiKey });
+    const baseDesc = `${request.name}, ${request.archetype}, ${request.description}. Modern 2D cartoon style, bright colors, clean bold outlines, simple shapes, game sprite asset`;
+
+    const partPrompts: Record<string, string> = {
+      head: `${baseDesc}, head and neck only, front view, no body below neck, isolated on solid white background #FFFFFF, no shadows`,
+      torso: `${baseDesc}, torso from neck to hips only, front view, no head, no arms, no legs, isolated on solid white background #FFFFFF, no shadows`,
+      rightArm: `${baseDesc}, right arm only from shoulder to hand, front view, slightly bent, no body, isolated on solid white background #FFFFFF, no shadows`,
+      leftArm: `${baseDesc}, left arm only from shoulder to hand, front view, slightly bent, no body, isolated on solid white background #FFFFFF, no shadows`,
+      rightLeg: `${baseDesc}, right leg only from hip to foot, front view, no body, isolated on solid white background #FFFFFF, no shadows`,
+      leftLeg: `${baseDesc}, left leg only from hip to foot, front view, no body, isolated on solid white background #FFFFFF, no shadows`
+    };
+
+    // Generate a single part with up to 2 retries if it fails.
+    const generatePartWithRetry = async (partName: string, prompt: string): Promise<{ partName: string; dataUrl: string } | null> => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const response = await genAI.models.generateContent({
+            model: "gemini-2.0-flash-exp-image-generation",
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            config: { responseModalities: ["IMAGE", "TEXT"] }
+          });
+          for (const candidate of response.candidates ?? []) {
+            for (const part of candidate.content?.parts ?? []) {
+              if (part.inlineData?.mimeType?.startsWith("image/") && part.inlineData.data) {
+                return { partName, dataUrl: `data:${part.inlineData.mimeType};base64,${part.inlineData.data}` };
+              }
+            }
+          }
+        } catch {
+          // Retry on error.
+        }
+      }
+      return null;
+    };
+
+    // Fire all 6 image generation calls in parallel for speed.
+    const results = await Promise.all(
+      Object.entries(partPrompts).map(([partName, prompt]) => generatePartWithRetry(partName, prompt))
+    );
+
+    // All 6 parts must succeed for articulated animation to work.
+    const partMap: Record<string, string> = {};
+    for (const result of results) {
+      if (!result) return null;
+      partMap[result.partName] = result.dataUrl;
+    }
+
+    if (!partMap.head || !partMap.torso || !partMap.rightArm || !partMap.leftArm || !partMap.rightLeg || !partMap.leftLeg) {
+      return null;
+    }
+
+    return {
+      head: partMap.head,
+      torso: partMap.torso,
+      leftArm: partMap.leftArm,
+      rightArm: partMap.rightArm,
+      leftLeg: partMap.leftLeg,
+      rightLeg: partMap.rightLeg
     };
   } catch {
     return null;
@@ -168,7 +295,7 @@ export const routeCharacterGeneration = async (
     }
   }
 
-  // Illustration chain: Vertex AI → Stitch generate_screen_from_text → SVG placeholder.
+  // Illustration chain: Vertex AI → Gemini → Stitch generate_screen_from_text → SVG placeholder.
   if (options.gcpProject && options.gcpLocation) {
     const vertexResult = await tryVertexAiImage(
       request,
@@ -177,7 +304,30 @@ export const routeCharacterGeneration = async (
     );
 
     if (vertexResult) {
+      // Reason: Vertex AI provides the portrait; Gemini generates parts independently.
+      // Parts enable articulated limb animation regardless of which provider drew the portrait.
+      if (options.apiKey) {
+        const parts = await tryGeminiPartGeneration(request, options.apiKey);
+        if (parts) {
+          vertexResult.parts = parts;
+        }
+      }
       return vertexResult;
+    }
+  }
+
+  // Gemini fallback — available with just an API key.
+  // Also attempt part generation in parallel to enrich the result for articulated animation.
+  if (options.apiKey) {
+    const geminiResult = await tryGeminiCharacterImage(request, options.apiKey);
+    if (geminiResult) {
+      // Reason: Fire part generation concurrently after the portrait succeeds.
+      // Parts enable articulated limb animation (Phase 2); portrait is shown immediately.
+      const parts = await tryGeminiPartGeneration(request, options.apiKey);
+      if (parts) {
+        geminiResult.parts = parts;
+      }
+      return geminiResult;
     }
   }
 

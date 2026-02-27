@@ -24,7 +24,23 @@ export type AgentStreamMessage =
   | { type: "approval_request"; requestId: string; choices: string[]; context: string }
   | { type: "play_start"; sceneId: string; storyTitle: string }
   | { type: "play_frame"; beat: number; sceneId: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  /**
+   * Thinking indicator — emitted before long-running operations to show progress.
+   * Clear by emitting with stage: "" when the operation is complete.
+   */
+  | { type: "thinking"; stage: string }
+  /**
+   * AI-generated scene backdrop image for the canvas stage.
+   * Emitted when a SCENE_OPEN beat generates an illustration.
+   */
+  | { type: "scene_backdrop"; sceneId: string; imageUrl: string; setting: string }
+  /**
+   * Character portrait image for a cast member.
+   * Emitted before play compilation for each approved character.
+   * Optional parts contain separate body-part images for articulated puppet animation.
+   */
+  | { type: "character_portrait"; charId: string; name: string; imageUrl: string; parts?: { head: string; torso: string; leftArm: string; rightArm: string; leftLeg: string; rightLeg: string } };
 
 /** Sent from the browser to the agent over WebSocket. */
 export type ChatInboundMessage =
@@ -65,6 +81,8 @@ export type CharacterAsset = {
   archetype: string;
   previewUrl: string;
   hasParts: boolean;
+  /** Separate body-part image URLs for articulated puppet animation. */
+  parts?: { head: string; torso: string; leftArm: string; rightArm: string; leftLeg: string; rightLeg: string };
   source: "library" | "stitch" | "stub" | "svg" | "vertex_ai";
 };
 

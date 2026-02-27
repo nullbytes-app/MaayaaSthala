@@ -64,6 +64,7 @@ export const FOLKLORE_TEMPLATES: Record<FolkloreTradition, FolkloreTemplate> = {
     moralFramework: "Virtue, courage, and respect for elders always prevail.",
     natyaScriptHints:
       "Use SCENE_OPEN for forest/village/palace. NARRATE for story voice. SPEAK for dialogue. " +
+      "ENTER/EXIT to move characters on and off stage. EMOTE before emotional beats. " +
       "GESTURE for emotional moments. Shadow double for temptation scene. SCENE_CLOSE to end each chapter."
   },
 
@@ -78,6 +79,7 @@ export const FOLKLORE_TEMPLATES: Record<FolkloreTradition, FolkloreTemplate> = {
     moralFramework: "Intelligence and virtue outweigh brute strength. Greed leads to downfall.",
     natyaScriptHints:
       "Animals speak directly (SPEAK opcode). Forest setting with SCENE_OPEN. " +
+      "ENTER both animals from opposite sides. Use EMOTE emotion=cunning before trickster moves. " +
       "Use oathDelta/desireDelta for the moral arc. End with a spoken moral (NARRATE)."
   },
 
@@ -108,6 +110,7 @@ export const FOLKLORE_TEMPLATES: Record<FolkloreTradition, FolkloreTemplate> = {
     moralFramework: "Wit and observation solve what force cannot. Humor disarms power.",
     natyaScriptHints:
       "Palace setting. SPEAK heavily (court dialogue). GESTURE for comic timing. " +
+      "ENTER courtiers one by one. EMOTE emotion=surprised for king's reactions. " +
       "Use desireDelta for Tenali's rising confidence. Humorous NARRATE asides to audience."
   },
 
@@ -179,28 +182,68 @@ Valid OPCODES:
 - SCENE_CLOSE scene=<name>
 - NARRATE text=<narration_text> storyState=<invocation|temptation_peak|restoration>
 - SPEAK role=<charId> text=<dialogue_text>
-- GESTURE role=<charId> gesture=<bow|raise_arm|shake_head|dance|fight|kneel>
+- GESTURE role=<charId> gesture=<bow|raise_arm|shake_head|dance|fight|kneel|joyful|angry|cunning|surprised|fearful|sad|walking>
 - BARGE_IN chorusRole=<charId> text=<interjection>
+- ENTER role=<charId> from=<left|right> [to=<left|center_left|center|center_right|right>] [style=<walk|hop|crawl|sneak|run>]
+- EXIT role=<charId> to=<left|right> [style=<walk|hop|crawl|sneak|run>]
+- MOVE role=<charId> to=<left|center_left|center|center_right|right> [style=<walk|hop|crawl|sneak|run>]
+- EMOTE role=<charId> emotion=<angry|joyful|cunning|surprised|fearful|sad|listen>
 
 **NatyaScript Rules**:
 - Beat numbers start at 1 and increase (not necessarily consecutive)
 - Text values with spaces do NOT use quotes — the entire rest after = is the value
 - NARRATE must include storyState for at least: beat 1 (invocation), middle beat (temptation_peak), final beat (restoration)
-- Use at least 10 beats, maximum 25 beats
+- Use at least 15 beats, maximum 35 beats
 - First line must be @1 SCENE_OPEN
 - Last 2 lines must include NARRATE storyState=restoration and SCENE_CLOSE
+- Characters must ENTER before they SPEAK — slide in from offscreen
 
-Example NatyaScript:
-@1 SCENE_OPEN scene=forest setting=A magical forest at dusk
-@2 NARRATE text=Long ago in a forest there lived a brave young prince storyState=invocation
-@3 SPEAK role=c_prince text=I will find the golden flower or I shall never return
-@5 GESTURE role=c_prince gesture=raise_arm
-@8 NARRATE text=But temptation crept in as the demon offered power storyState=temptation_peak desireDelta=30 oathDelta=-20
-@9 SPEAK role=c_demon text=Join me and this forest shall be yours
-@12 GESTURE role=c_prince gesture=shake_head shadowDouble=true
-@15 NARRATE text=The prince remembered his promise and chose virtue storyState=restoration oathDelta=30
-@16 SPEAK role=c_prince text=I choose the path of dharma
-@18 SCENE_CLOSE scene=forest
+**CHOREOGRAPHY RULES** (biped animated characters — FOLLOW THESE STRICTLY):
+- Characters must ENTER before their first SPEAK — walk in from stage left or right
+- When one character speaks, the OTHER should EMOTE (listen, react) — puppets must always be alive
+- Use EMOTE emotion=<type> BEFORE the corresponding dialogue to set the emotional context
+- After confrontation: loser should EXIT, winner should GESTURE gesture=raise_arm or gesture=joyful
+- Use MOVE at least twice per character during the story — no one stays static
+- Walking characters: use ENTER/EXIT/MOVE opcodes (triggers walk cycle with leg animation)
+- Dramatic reveals: pause a beat, then ENTER with slow entry
+- Combat requires at least 3 alternating GESTURE gesture=fight exchanges between characters
+- Joy/celebration: both characters GESTURE gesture=joyful on the same beat pair
+- NARRATE can occur while characters are MOVE-ing — stage direction while narrating
+- Vary emotional states through EMOTE — characters should not stay emotionally neutral
+- Physical actions matter: dropping/giving something = GESTURE gesture=raise_arm then EMOTE
+- Every character should move across the stage at least once — use MOVE to reposition
 
-Generate the story now. Make it culturally authentic, age-appropriate, and emotionally engaging.`;
+Example NatyaScript (theatrical with full choreography and walking animations):
+@1 SCENE_OPEN scene=river setting=A sunny riverbank with a large fruit tree and sparkling water
+@2 NARRATE text=By a wide river a clever monkey lived in a tall fruit tree storyState=invocation
+@3 ENTER role=c_monkey from=left to=center_left
+@4 EMOTE role=c_monkey emotion=joyful
+@5 GESTURE role=c_monkey gesture=dance
+@6 SPEAK role=c_monkey text=What a beautiful day for some sweet fruits
+@7 ENTER role=c_croc from=right to=center_right
+@8 EMOTE role=c_monkey emotion=surprised
+@9 EMOTE role=c_croc emotion=cunning
+@10 SPEAK role=c_croc text=Hello friend those fruits look delicious
+@11 MOVE role=c_croc to=center
+@12 NARRATE text=The crocodile crept closer his plan already forming storyState=temptation_peak desireDelta=40
+@13 EMOTE role=c_croc emotion=joyful
+@14 SPEAK role=c_monkey text=Here catch some
+@15 GESTURE role=c_monkey gesture=raise_arm
+@16 EMOTE role=c_croc emotion=cunning
+@17 SPEAK role=c_croc text=Come to my home across the river for a feast
+@18 EMOTE role=c_monkey emotion=cunning
+@19 SPEAK role=c_monkey text=I left my heart in the tree Let me go get it
+@20 MOVE role=c_monkey to=left
+@21 EMOTE role=c_croc emotion=surprised
+@22 SPEAK role=c_croc text=Hurry back friend
+@23 NARRATE text=But the wise monkey never returned storyState=restoration oathDelta=30
+@24 GESTURE role=c_monkey gesture=dance
+@25 EMOTE role=c_croc emotion=angry
+@26 GESTURE role=c_croc gesture=angry
+@27 EXIT role=c_croc to=right
+@28 SPEAK role=c_monkey text=A true friend would never want my heart
+@29 EXIT role=c_monkey to=left
+@30 SCENE_CLOSE scene=river
+
+Generate the story now. Make it culturally authentic, age-appropriate, and emotionally engaging with rich theatrical choreography.`;
 };

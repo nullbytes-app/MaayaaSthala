@@ -43,10 +43,10 @@ describe("routeCharacterGeneration — expected use", () => {
 
 // --- Edge case ---
 describe("routeCharacterGeneration — edge cases", () => {
-  it("includes all standard puppet parts in the stub result", async () => {
+  it("includes all 6 puppet parts in camelCase in the stub result", async () => {
     const result = await routeCharacterGeneration(heroRequest, {});
 
-    const expectedParts = ["head", "torso", "left_arm", "right_arm", "left_leg", "right_leg"];
+    const expectedParts = ["head", "torso", "leftArm", "rightArm", "leftLeg", "rightLeg"];
     for (const part of expectedParts) {
       expect(result.parts).toHaveProperty(part);
     }

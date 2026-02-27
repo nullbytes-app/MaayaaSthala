@@ -6,6 +6,7 @@ import type { CharacterAsset, CharacterGenerationRequest, CharacterGenerationRes
 type GeneratorOptions = {
   gcpProject?: string;
   gcpLocation?: string;
+  apiKey?: string;
   stitchMcpAvailable?: boolean;
   /**
    * Optional Stitch MCP client — only available in the Claude Code dev environment.
@@ -33,8 +34,25 @@ export const generateCharacter = async (
     stitchMcpAvailable: options.stitchMcpAvailable ?? false,
     stitchMcpClient: options.stitchMcpClient,
     gcpProject: options.gcpProject,
-    gcpLocation: options.gcpLocation
+    gcpLocation: options.gcpLocation,
+    apiKey: options.apiKey
   });
+
+  // Reason: Extract typed parts from the generation result if all 6 expected keys are present.
+  // All 6 parts (head/torso/arms/legs) are required for full articulated puppet animation.
+  const resultParts = result.parts;
+  const typedParts =
+    resultParts?.head && resultParts?.torso && resultParts?.leftArm && resultParts?.rightArm &&
+    resultParts?.leftLeg && resultParts?.rightLeg
+      ? {
+          head: resultParts.head,
+          torso: resultParts.torso,
+          leftArm: resultParts.leftArm,
+          rightArm: resultParts.rightArm,
+          leftLeg: resultParts.leftLeg,
+          rightLeg: resultParts.rightLeg
+        }
+      : undefined;
 
   const asset: CharacterAsset = {
     assetId: result.assetId,
@@ -42,6 +60,7 @@ export const generateCharacter = async (
     archetype: request.archetype,
     previewUrl: result.previewUrl,
     hasParts: result.hasParts,
+    ...(typedParts ? { parts: typedParts } : {}),
     source:
       result.source === "stitch_mcp" ? "stitch"
       : result.source === "stitch_stub" ? "stub"
@@ -77,6 +96,6 @@ export const buildGenerationRequest = (
   name: char.name,
   archetype: char.archetype,
   description: char.description,
-  style: "traditional Indian shadow puppet theatre, warm earthy tones",
+  style: "modern 2D cartoon",
   needsParts
 });

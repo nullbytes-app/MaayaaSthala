@@ -71,7 +71,11 @@ const laneByOpcode: Record<string, RuntimeStageCommand["lane"]> = {
   NARRATE: "narration",
   SPEAK: "audio",
   GESTURE: "puppet",
-  BARGE_IN: "control"
+  BARGE_IN: "control",
+  ENTER: "puppet",
+  EXIT: "puppet",
+  MOVE: "puppet",
+  EMOTE: "puppet"
 };
 
 export const compileNatyaScript = (input: CompileInput): RuntimeStageCommand[] => {
@@ -94,8 +98,17 @@ export const compileNatyaScript = (input: CompileInput): RuntimeStageCommand[] =
     const payload = normalizePayload(parsePayload(parts.slice(2)));
     const usesShadow = payload.shadowDouble === true;
     const chorusRole = typeof payload.chorusRole === "string" ? payload.chorusRole : undefined;
+    // For SPEAK and GESTURE, use role= to route to the right character's artifact.
+    const speakRole =
+      (opcode === "SPEAK" || opcode === "GESTURE" || opcode === "ENTER" || opcode === "EXIT" || opcode === "MOVE" || opcode === "EMOTE") && typeof payload.role === "string"
+        ? payload.role
+        : undefined;
     const roleArtifactId =
-      opcode === "BARGE_IN" && chorusRole ? input.roleArtifactIds?.[chorusRole] : undefined;
+      opcode === "BARGE_IN" && chorusRole
+        ? input.roleArtifactIds?.[chorusRole]
+        : speakRole
+          ? input.roleArtifactIds?.[speakRole]
+          : undefined;
 
     return {
       version: "1.0",

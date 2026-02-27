@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Gemini, InMemoryRunner, LlmAgent, isFinalResponse, stringifyContent } from "@google/adk";
-import { parseJsonResponse } from "../../agent-orchestrator/src/adk/modelGateway.js";
+import { parseJsonResponse, buildPromptForAttempt } from "../../agent-orchestrator/src/adk/modelGateway.js";
 import { STORYTELLER_SYSTEM_PROMPT, FOLKLORE_TEMPLATES, type FolkloreTradition } from "./prompts.js";
 import { sessionStore } from "./sessionStore.js";
 import { generateStory } from "./tools/storyGenerator.js";
@@ -24,13 +24,12 @@ type AgentConfig = {
 type MessageHandler = (message: AgentStreamMessage) => void;
 
 /**
- * Build the ADK LlmAgent + InMemoryRunner for multi-turn conversation.
- * One runner is shared for all sessions (sessions are differentiated by userId).
+ * Build Gemini LLM options from agent config.
  */
-const createAdkRunner = (config: AgentConfig): InMemoryRunner => {
+const buildLlmOptions = (config: AgentConfig): ConstructorParameters<typeof Gemini>[0] => {
   const model = config.model ?? "gemini-2.5-flash";
-
   const llmOptions: ConstructorParameters<typeof Gemini>[0] = { model };
+
   if (config.apiKey) {
     llmOptions.apiKey = config.apiKey;
   }
@@ -41,7 +40,15 @@ const createAdkRunner = (config: AgentConfig): InMemoryRunner => {
     llmOptions.location = config.gcpLocation;
   }
 
-  const llm = new Gemini(llmOptions);
+  return llmOptions;
+};
+
+/**
+ * Build the ADK LlmAgent + InMemoryRunner for multi-turn conversation.
+ * One runner is shared for all sessions (sessions are differentiated by userId).
+ */
+const createAdkRunner = (config: AgentConfig): InMemoryRunner => {
+  const llm = new Gemini(buildLlmOptions(config));
 
   // Register tools so the LLM sees their schemas and can call them for
   // conversational turns. Streaming tools (generate_story, compile_play)
@@ -57,6 +64,78 @@ const createAdkRunner = (config: AgentConfig): InMemoryRunner => {
     agent,
     appName: "story-ai-conversation"
   });
+};
+
+/**
+ * Build a separate JSON-only gateway for structured generation calls.
+ * This avoids routing through the conversational storyteller agent which
+ * adds persona/commentary that breaks JSON parsing.
+ */
+const createJsonRunner = (config: AgentConfig): InMemoryRunner => {
+  const llm = new Gemini(buildLlmOptions(config));
+
+  const agent = new LlmAgent({
+    name: "story_json_gateway",
+    model: llm,
+    instruction:
+      "You are a JSON gateway. Return exactly one valid JSON object and no additional commentary. " +
+      "Do not use markdown code fences. Do not add any explanation before or after the JSON."
+  });
+
+  return new InMemoryRunner({
+    agent,
+    appName: "story-ai-json-gateway"
+  });
+};
+
+/**
+ * Send a prompt to the JSON-only gateway and parse the JSON response.
+ * Creates a fresh session per call to avoid conversational context leaking.
+ */
+const runJsonPrompt = async (
+  jsonRunner: InMemoryRunner,
+  prompt: string,
+  maxAttempts = 3
+): Promise<unknown> => {
+  const userId = "story-ai-json";
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const session = await jsonRunner.sessionService.createSession({
+      appName: "story-ai-json-gateway",
+      userId
+    });
+
+    let finalText = "";
+
+    for await (const event of jsonRunner.runAsync({
+      userId,
+      sessionId: session.id,
+      newMessage: {
+        role: "user",
+        parts: [{ text: buildPromptForAttempt(prompt, attempt) }]
+      }
+    })) {
+      if (isFinalResponse(event)) {
+        const text = stringifyContent(event).trim();
+        if (text.length > 0) {
+          finalText = text;
+        }
+      }
+    }
+
+    if (!finalText) {
+      if (attempt >= maxAttempts) throw new Error("Model returned an empty response");
+      continue;
+    }
+
+    try {
+      return parseJsonResponse(finalText);
+    } catch (error) {
+      if (attempt >= maxAttempts) throw error;
+    }
+  }
+
+  throw new Error("JSON gateway exhausted retries without producing JSON");
 };
 
 /**
@@ -138,24 +217,20 @@ export const handleConversationTurn = async (
   session: ConversationSession,
   runner: InMemoryRunner,
   onMessage: MessageHandler,
-  config: AgentConfig = {}
+  config: AgentConfig = {},
+  jsonRunner?: InMemoryRunner
 ): Promise<void> => {
   // Detect intent from user message.
   const lower = userMessage.toLowerCase();
-  const isStoryRequest =
-    lower.includes("tell me") ||
-    lower.includes("story") ||
-    lower.includes("chandam") ||
-    lower.includes("panchatantra") ||
-    lower.includes("tale") ||
-    lower.includes("narrate");
 
   const isPlayRequest =
     lower.includes("let's go") ||
+    lower.includes("lets go") ||
     lower.includes("play") ||
     lower.includes("perform") ||
     lower.includes("ready") ||
-    lower.includes("show");
+    lower.includes("show") ||
+    lower.includes("start");
 
   const isGenerateCharRequest =
     lower.includes("generate") ||
@@ -164,24 +239,79 @@ export const handleConversationTurn = async (
     lower.includes("doesn't look") ||
     lower.includes("doesn't fit");
 
+  // Story request detection — but NOT if this is clearly a play/perform request.
+  // Broader detection: catches natural-language requests like "A lion and a mouse"
+  // or "About a clever crow and a fox" that don't use explicit keywords.
+  const isStoryRequest =
+    !isPlayRequest &&
+    !isGenerateCharRequest &&
+    (
+      lower.includes("tell me") || lower.includes("story about") ||
+      lower.includes("chandam") || lower.includes("panchatantra") ||
+      lower.includes("tale") || lower.includes("narrate") ||
+      lower.includes("tell a") || lower.includes("fable") ||
+      lower.includes("story of") || lower.includes("a story") ||
+      lower.includes("about a") || lower.includes("between a") ||
+      /^(a |an |the |about |once upon)/i.test(userMessage.trim()) ||
+      // Fallback: any multi-word message when there's no active story is likely a story request.
+      // Reason: the app's primary use case is story requests; non-story inputs are rare without context.
+      (!session.currentStory && userMessage.trim().split(/\s+/).length >= 4)
+    );
+
   // Step 1: Story generation request.
-  if (isStoryRequest && !session.currentStory) {
+  // Reset current story if the user requests a new one — prevents falling through
+  // to sendToAdk with a huge previous-session context that causes ADK hangs.
+  if (isStoryRequest) {
+    if (session.currentStory) {
+      session.currentStory = undefined;
+      session.approvedCharacters.clear();
+    }
     onMessage({ type: "text", content: "Ah, wonderful! Let me weave a tale for you... 🎭" });
 
-    try {
-      const story = await generateStory(
-        {
-          userRequest: userMessage,
-          tradition: parseTraditionFromText(userMessage)
-        },
-        {
-          runJsonPrompt: async (prompt: string) => {
-            const response = await sendToAdk(runner, session, prompt);
-            return parseJsonResponse(response);
-          }
-        }
-      );
+    // Rotate through progress messages every 4s so the user sees activity
+    // during the 20-40s generation window rather than a single frozen spinner.
+    const progressStages = [
+      "Weaving your tale...",
+      "Conjuring the characters...",
+      "Writing the NatyaScript...",
+      "Composing the scenes...",
+      "Finalizing the choreography...",
+    ];
+    let progressIdx = 0;
+    onMessage({ type: "thinking", stage: progressStages[0] });
+    const progressInterval = setInterval(() => {
+      progressIdx = (progressIdx + 1) % progressStages.length;
+      onMessage({ type: "thinking", stage: progressStages[progressIdx] });
+    }, 4000);
 
+    try {
+      const story = await Promise.race([
+        generateStory(
+          {
+            userRequest: userMessage,
+            tradition: parseTraditionFromText(userMessage)
+          },
+          {
+            runJsonPrompt: async (prompt: string) => {
+              // Use the dedicated JSON gateway — not the conversational agent
+              // which would add persona/commentary breaking JSON parsing.
+              if (jsonRunner) {
+                return runJsonPrompt(jsonRunner, prompt);
+              }
+
+              // Fallback: route through conversational agent (less reliable).
+              const response = await sendToAdk(runner, session, prompt);
+              return parseJsonResponse(response);
+            }
+          }
+        ),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Story generation timed out — please try again")), 60_000)
+        )
+      ]);
+
+      clearInterval(progressInterval);
+      onMessage({ type: "thinking", stage: "" });
       session.currentStory = story;
 
       // Stream story concept as text.
@@ -278,23 +408,95 @@ export const handleConversationTurn = async (
           content: `Characters set! Say "let's perform" when you're ready to start the story.`
         });
       } else {
-        // "Generate new characters" or "Yes, generate characters" — prompt user to proceed.
+        // "Generate new characters" or "Yes, generate characters" — auto-generate each character.
+        const story = session.currentStory;
+        for (const char of story.characters) {
+          onMessage({ type: "text", content: `Painting ${char.name} as a cartoon character — this takes a few seconds...` });
+          onMessage({ type: "thinking", stage: `Creating ${char.name}...` });
+          let asset;
+          try {
+            asset = await generateCharacter(
+              buildGenerationRequest(char, false),
+              {
+                gcpProject: config.gcpProject,
+                gcpLocation: config.gcpLocation,
+                apiKey: config.apiKey,
+                stitchMcpAvailable: config.stitchMcpAvailable ?? false
+              }
+            );
+          } catch (genError) {
+            onMessage({ type: "thinking", stage: "" });
+            const msg = genError instanceof Error ? genError.message : String(genError);
+            onMessage({ type: "error", message: `Failed to generate ${char.name}: ${msg}` });
+            continue;
+          }
+
+          onMessage({ type: "thinking", stage: "" });
+          onMessage({ type: "image", url: asset.previewUrl, caption: `${asset.name} (${asset.archetype})` });
+
+          const approvalId = randomUUID();
+          const approvalChoices = ["Perfect! Add to cast", "Generate another variation", "Use library version"];
+          onMessage({
+            type: "approval_request",
+            requestId: approvalId,
+            choices: approvalChoices,
+            context: `Character approval: ${asset.name}`
+          });
+
+          const charChoice = await sessionStore.addPendingApproval(
+            session.sessionId,
+            approvalId,
+            `Character approval: ${asset.name}`,
+            approvalChoices
+          );
+
+          if (charChoice === "Use library version") {
+            const charMatches = matchCharactersToLibrary([char]);
+            const lib = charMatches.get(char.charId);
+            session.approvedCharacters.set(char.charId, lib ?? asset);
+          } else if (charChoice === "Generate another variation") {
+            onMessage({ type: "text", content: `I'll regenerate ${char.name}...` });
+            onMessage({ type: "thinking", stage: `Regenerating ${char.name}...` });
+            try {
+              const retry = await generateCharacter(buildGenerationRequest(char, false), {
+                gcpProject: config.gcpProject, gcpLocation: config.gcpLocation,
+                apiKey: config.apiKey, stitchMcpAvailable: config.stitchMcpAvailable ?? false
+              });
+              onMessage({ type: "thinking", stage: "" });
+              onMessage({ type: "image", url: retry.previewUrl, caption: `${retry.name} (${retry.archetype}) — new look` });
+              session.approvedCharacters.set(char.charId, retry);
+            } catch {
+              onMessage({ type: "thinking", stage: "" });
+              session.approvedCharacters.set(char.charId, asset);
+            }
+          } else {
+            session.approvedCharacters.set(char.charId, asset);
+          }
+        }
         onMessage({
           type: "text",
-          content:
-            `I'll create custom characters for this story. ` +
-            `Say "generate character" to create each one, or "let's perform" to start with placeholders.`
+          content: `All characters are ready! Say "let's perform" to start the show. 🎭`
         });
       }
     } catch (error) {
+      clearInterval(progressInterval);
+      onMessage({ type: "thinking", stage: "" });
       const message = error instanceof Error ? error.message : String(error);
-      onMessage({ type: "error", message: `Story generation failed: ${message}` });
+      onMessage({ type: "error", message: `Story generation failed: ${message}. Please try again or rephrase your request.` });
     }
 
     return;
   }
 
   // Step 3: Play execution request.
+  if (isPlayRequest && !session.currentStory) {
+    onMessage({
+      type: "text",
+      content: "We don't have a story yet! Tell me what kind of tale you'd like — for example: \"Tell me a Panchatantra tale about a clever crow\""
+    });
+    return;
+  }
+
   if (isPlayRequest && session.currentStory) {
     if (session.approvedCharacters.size === 0) {
       // Auto-use library characters if none were explicitly approved.
@@ -313,8 +515,23 @@ export const handleConversationTurn = async (
       type: "text",
       content: `The stage is set! Performing "${session.currentStory.title}" 🎭`
     });
+    onMessage({ type: "thinking", stage: "Setting the stage..." });
 
     try {
+      onMessage({ type: "thinking", stage: "" });
+
+      // Emit character_portrait for each approved character before the play starts.
+      // Include parts if available for articulated puppet animation (Phase 2).
+      for (const [charId, asset] of session.approvedCharacters) {
+        onMessage({
+          type: "character_portrait",
+          charId,
+          name: asset.name,
+          imageUrl: asset.previewUrl,
+          ...(asset.parts ? { parts: asset.parts } : {})
+        });
+      }
+
       await compileAndRunPlay(
         {
           story: session.currentStory,
@@ -324,9 +541,10 @@ export const handleConversationTurn = async (
           onMessage,
           beatDelayMs: 400,
           audioEnabled: !!config.gcpProject,
-          imagesEnabled: !!config.gcpProject,
+          imagesEnabled: !!(config.gcpProject || config.apiKey),
           gcpProject: config.gcpProject,
-          gcpLocation: config.gcpLocation
+          gcpLocation: config.gcpLocation,
+          apiKey: config.apiKey
         }
       );
 
@@ -348,7 +566,6 @@ export const handleConversationTurn = async (
 
   // Step 3 alternative: Generate new character on demand.
   if (isGenerateCharRequest && session.currentStory) {
-    onMessage({ type: "text", content: "I'll create a custom character for this story..." });
 
     // Generate the first un-approved character from the story.
     const story = session.currentStory;
@@ -363,16 +580,20 @@ export const handleConversationTurn = async (
 
     const charToGenerate = unapprovedChars[0];
 
+    onMessage({ type: "text", content: `Painting ${charToGenerate.name} as a cartoon character — this takes a few seconds...` });
+    onMessage({ type: "thinking", stage: `Creating ${charToGenerate.name}...` });
     try {
       const asset = await generateCharacter(
-        buildGenerationRequest(charToGenerate, true),
+        buildGenerationRequest(charToGenerate, false),
         {
           gcpProject: config.gcpProject,
           gcpLocation: config.gcpLocation,
+          apiKey: config.apiKey,
           stitchMcpAvailable: config.stitchMcpAvailable ?? false
         }
       );
 
+      onMessage({ type: "thinking", stage: "" });
       onMessage({
         type: "image",
         url: asset.previewUrl,
@@ -417,6 +638,7 @@ export const handleConversationTurn = async (
         onMessage({ type: "text", content: `${asset.name} added to your cast! Say "generate character" for the next one, or "let's perform" to start.` });
       }
     } catch (error) {
+      onMessage({ type: "thinking", stage: "" });
       const message = error instanceof Error ? error.message : String(error);
       onMessage({ type: "error", message: `Character generation failed: ${message}` });
     }
@@ -425,19 +647,31 @@ export const handleConversationTurn = async (
   }
 
   // Default: Pass to ADK agent for conversational response.
-  const agentResponse = await sendToAdk(runner, session, userMessage);
+  // Timeout prevents indefinite hang if Gemini takes too long with large context.
+  const agentResponse = await Promise.race([
+    sendToAdk(runner, session, userMessage),
+    new Promise<string>((_, reject) =>
+      setTimeout(() => reject(new Error("ADK response timed out after 30s")), 30_000)
+    )
+  ]);
   onMessage({ type: "text", content: agentResponse });
 };
 
+type AgentRunners = {
+  conversational: InMemoryRunner;
+  json: InMemoryRunner;
+};
+
 /**
- * Factory: create the agent runner from environment variables.
+ * Factory: create both the conversational and JSON gateway runners
+ * from environment variables.
  *
  * @param env - Environment variables (process.env or test overrides).
- * @returns Configured InMemoryRunner or undefined if no auth is available.
+ * @returns Configured runners or undefined if no auth is available.
  */
 export const createAgentFromEnv = (
   env: Record<string, string | undefined> = process.env
-): InMemoryRunner | undefined => {
+): AgentRunners | undefined => {
   const model = env.AGENTIC_MODEL?.trim() ?? "gemini-2.5-flash";
   const apiKey = env.GEMINI_API_KEY ?? env.GOOGLE_GENAI_API_KEY ?? env.GOOGLE_API_KEY;
   const vertexai = env.GOOGLE_GENAI_USE_VERTEXAI?.trim().toLowerCase() === "true";
@@ -451,11 +685,16 @@ export const createAgentFromEnv = (
     return undefined;
   }
 
-  return createAdkRunner({
+  const config: AgentConfig = {
     model,
     apiKey: hasApiKey ? apiKey : undefined,
     vertexai: hasVertexConfig,
     gcpProject,
     gcpLocation
-  });
+  };
+
+  return {
+    conversational: createAdkRunner(config),
+    json: createJsonRunner(config)
+  };
 };
