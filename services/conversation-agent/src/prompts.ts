@@ -206,7 +206,11 @@ Valid OPCODES:
 - SCENE_CLOSE scene=<name>
 - NARRATE text=<narration_text> storyState=<invocation|temptation_peak|restoration>
 - SPEAK role=<charId> text=<dialogue_text>
-- GESTURE role=<charId> gesture=<bow|raise_arm|shake_head|dance|fight|kneel|joyful|angry|cunning|surprised|fearful|sad|walking>
+- GESTURE role=<charId> gesture=<bow|raise_arm|shake_head|dance|fight|kneel|joyful|angry|cunning|surprised|fearful|sad|walking|pick_up|throw|drink>
+- PROP prop=<uniqueId> propType=<pot|stone_pile|water_jug|fruit_basket|lamp> at=<left|center_left|center|center_right|right> [visible=<true|false>]
+  Places a visual prop object on stage at the given position (depth-scaled automatically).
+  Use visible=false to remove a prop (e.g. when all stones have been thrown).
+  Example: @3 PROP prop=pot1 propType=pot at=center_right
 - BARGE_IN chorusRole=<charId> text=<interjection>
 - ENTER role=<charId> from=<left|right> [to=<left|center_left|center|center_right|right>] [style=<walk|hop|crawl|sneak|run>]
 - EXIT role=<charId> to=<left|right> [style=<walk|hop|crawl|sneak|run>]
@@ -244,6 +248,15 @@ Valid OPCODES:
 - Every character should move across the stage at least once — use MOVE to reposition
 - STAGE POSITIONS: When 2+ characters share the stage, always ENTER first character to=center_left and second to=center_right — NEVER position two characters at center+center_right or center+center_left simultaneously as this causes visual overlap. Use center ONLY when a single character is alone on stage. Dramatic approaches should EXIT one character first, then ENTER at a new position
 
+**PHYSICAL ACTIONS (use for stories with objects):**
+- For a character picking up an object: GESTURE gesture=pick_up (arm sweeps down and back)
+- For a character throwing something: GESTURE gesture=throw (arm arcs forward; projectile drawn automatically)
+- For a character drinking: GESTURE gesture=drink (arm raises to mouth)
+- Always place the prop with PROP before the character interacts with it
+- Character should MOVE to the same position as the prop before pick_up/throw
+- Repeat GESTURE pick_up + GESTURE throw 2–3 times for actions that happen multiple times (e.g. crow throwing multiple stones into a pot)
+- Use visible=false on the prop when it is consumed or no longer present
+
 Example NatyaScript (theatrical with full choreography and walking animations):
 @1 SCENE_OPEN scene=river setting=A sunny riverbank with a large fruit tree and sparkling water
 @2 NARRATE text=By a wide river a clever monkey lived in a tall fruit tree storyState=invocation
@@ -275,6 +288,32 @@ Example NatyaScript (theatrical with full choreography and walking animations):
 @28 SPEAK role=c_monkey text=A true friend would never want my heart
 @29 EXIT role=c_monkey to=left
 @30 SCENE_CLOSE scene=river
+
+Example NatyaScript (physical actions with props — thirsty crow story):
+@1 SCENE_OPEN scene=riverside setting=A dry riverside with a half-filled earthen pot and scattered pebbles
+@2 PROP prop=pot1 propType=pot at=center_right
+@3 PROP prop=stones1 propType=stone_pile at=center_left
+@4 NARRATE text=A thirsty crow found a pot of water but could not reach it storyState=invocation
+@5 ENTER role=c_crow from=left to=center_left
+@6 EMOTE role=c_crow emotion=fearful
+@7 SPEAK role=c_crow text=The water is too low I cannot drink
+@8 EMOTE role=c_crow emotion=cunning
+@9 NARRATE text=The clever crow had an idea storyState=temptation_peak
+@10 GESTURE role=c_crow gesture=pick_up
+@11 MOVE role=c_crow to=center_right
+@12 GESTURE role=c_crow gesture=throw
+@13 SPEAK role=c_crow text=One stone and the water rises a little
+@14 MOVE role=c_crow to=center_left
+@15 GESTURE role=c_crow gesture=pick_up
+@16 MOVE role=c_crow to=center_right
+@17 GESTURE role=c_crow gesture=throw
+@18 PROP prop=stones1 visible=false
+@19 EMOTE role=c_crow emotion=joyful
+@20 GESTURE role=c_crow gesture=drink
+@21 NARRATE text=Patient effort and clever thinking rewarded the crow storyState=restoration
+@22 GESTURE role=c_crow gesture=joyful
+@23 EXIT role=c_crow to=right
+@24 SCENE_CLOSE scene=riverside
 
 Generate the story now. Make it culturally authentic, age-appropriate, and emotionally engaging with rich theatrical choreography.`;
 };
