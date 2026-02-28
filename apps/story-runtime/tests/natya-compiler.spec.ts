@@ -75,6 +75,71 @@ describe("natya compiler", () => {
     expect(moodCmd?.lane).toBe("control");
   });
 
+  it("compiles PROP opcode with prop_ artifact ID in puppet lane", () => {
+    const script = [
+      "@1 SCENE_OPEN scene=test setting=test",
+      "@2 PROP prop=pot1 propType=pot at=center_right",
+      "@3 SCENE_CLOSE scene=test"
+    ].join("\n");
+
+    const commands = compileNatyaScript({
+      storyId: "prop_test",
+      script,
+      resolvedArtifactId: "gemini_default_001",
+      roleArtifactIds: {}
+    });
+
+    const propCmd = commands.find(c => c.opcode === "PROP");
+    expect(propCmd).toBeDefined();
+    expect(propCmd?.lane).toBe("puppet");
+    expect(propCmd?.target.artifactId).toBe("prop_pot1");
+    expect(propCmd?.payload.propType).toBe("pot");
+    expect(propCmd?.payload.at).toBe("center_right");
+  });
+
+  it("PROP visible=false still routes to prop_ artifact", () => {
+    const script = [
+      "@1 SCENE_OPEN scene=test setting=test",
+      "@2 PROP prop=stones1 visible=false",
+      "@3 SCENE_CLOSE scene=test"
+    ].join("\n");
+
+    const commands = compileNatyaScript({
+      storyId: "prop_test2",
+      script,
+      resolvedArtifactId: "gemini_default_001",
+      roleArtifactIds: {}
+    });
+
+    const propCmd = commands.find(c => c.opcode === "PROP");
+    expect(propCmd?.target.artifactId).toBe("prop_stones1");
+    expect(propCmd?.payload.visible).toBe(false);
+  });
+
+  it("pick_up/throw/drink gesture values compile and route to character artifact", () => {
+    const script = [
+      "@1 SCENE_OPEN scene=test setting=test",
+      "@2 GESTURE role=c_crow gesture=pick_up",
+      "@3 GESTURE role=c_crow gesture=throw",
+      "@4 GESTURE role=c_crow gesture=drink",
+      "@5 SCENE_CLOSE scene=test"
+    ].join("\n");
+
+    const commands = compileNatyaScript({
+      storyId: "gesture_test",
+      script,
+      resolvedArtifactId: "gemini_c_crow_001",
+      roleArtifactIds: { c_crow: "gemini_c_crow_001" }
+    });
+
+    const gestures = commands.filter(c => c.opcode === "GESTURE");
+    expect(gestures).toHaveLength(3);
+    for (const g of gestures) {
+      expect(g.target.artifactId).toBe("gemini_c_crow_001");
+      expect(g.lane).toBe("puppet");
+    }
+  });
+
   it("supports runtime execution from compiled commands", async () => {
     const commands = compileNatyaScript({
       storyId: "natya_story_2",

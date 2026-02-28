@@ -81,7 +81,8 @@ const laneByOpcode: Record<string, RuntimeStageCommand["lane"]> = {
   // Director opcodes — injected by Rangmanch at runtime, not written by story generator.
   CAMERA: "control",
   EFFECT: "control",
-  SPOTLIGHT: "control"
+  SPOTLIGHT: "control",
+  PROP: "puppet"
 };
 
 export const compileNatyaScript = (input: CompileInput): RuntimeStageCommand[] => {
@@ -116,6 +117,12 @@ export const compileNatyaScript = (input: CompileInput): RuntimeStageCommand[] =
           ? input.roleArtifactIds?.[speakRole]
           : undefined;
 
+    // PROP commands use prop=<id> and get a stable prop_<id> artifact slot.
+    const propArtifactId =
+      opcode === "PROP" && typeof payload.prop === "string"
+        ? `prop_${payload.prop}`
+        : undefined;
+
     return {
       version: "1.0",
       eventId: `${input.storyId}_natya_${beat}_${index}`,
@@ -126,7 +133,7 @@ export const compileNatyaScript = (input: CompileInput): RuntimeStageCommand[] =
       target: {
         artifactId: usesShadow
           ? (input.shadowArtifactId ?? input.resolvedArtifactId)
-          : (roleArtifactId ?? input.resolvedArtifactId)
+          : (propArtifactId ?? roleArtifactId ?? input.resolvedArtifactId)
       },
       payload
     } as RuntimeStageCommand;
