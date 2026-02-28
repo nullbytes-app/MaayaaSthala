@@ -201,18 +201,32 @@ if (chatMessagesEl) {
         characterExpressions.set(message.charId, { ...existing, [message.expressionKey]: message.imageUrl });
         // Don't send to chat panel
       } else if (message.type === "text" && isPlayActive) {
-        // During play: route narration/dialogue to stage caption overlay + browser TTS.
+        // During play: route narration/dialogue to the correct stage overlay + browser TTS.
+        // NARRATE lines are wrapped in *asterisks*; SPEAK (dialogue) lines are wrapped in "quotes".
+        // Reason: playCompiler.ts emits text messages without a speaker field — the quote/asterisk
+        // convention is the heuristic for distinguishing narration from character dialogue.
         const text = message.content;
         const isNarration = text.startsWith("*") && text.endsWith("*");
         const isDialogue = text.startsWith('"') && text.endsWith('"');
 
         if (isNarration) {
+          // Narration goes to the caption overlay (full-width bar at bottom of stage).
           const clean = text.replace(/^\*|\*$/g, "");
           chatRenderer?.setCaption?.(clean, "Narrator");
+          renderer?.setCaption?.(clean, "Narrator");
           speakText(clean, false);
         } else if (isDialogue) {
+          // Dialogue goes to speech bubbles on both renderers.
+          // The concurrent stage_command (SPEAK opcode) already calls applyFrame →
+          // setSpeechBubble internally, but we also call it here to:
+          //   a) ensure the studio-panel renderer (renderer) shows the bubble, and
+          //   b) keep the two renderers in sync if message ordering shifts.
+          // Reason: applyFrame sets the bubble anchored to the character position;
+          // calling setSpeechBubble with role="" falls back to a centred bubble,
+          // which is acceptable until a speaker field is added to AgentStreamMessage.
           const clean = text.replace(/^"|"$/g, "");
-          chatRenderer?.setCaption?.(clean, "");
+          chatRenderer?.setSpeechBubble?.("", clean, "neutral");
+          renderer?.setSpeechBubble?.("", clean, "neutral");
           speakText(clean, true);
         }
         // Still send to chat panel for the transcript.
