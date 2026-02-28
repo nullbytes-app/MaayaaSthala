@@ -41,6 +41,8 @@ export const resolveExpression = (opcode, payload) => {
     if (emotion === "angry" || emotion === "fight") return "angry";
     if (emotion === "sad" || emotion === "fearful" || emotion === "kneel") return "sad";
     if (emotion === "surprised" || emotion === "cunning") return "neutral";
+    // Physical gestures keep the character's face neutral — the arm overlay provides the visual action.
+    if (emotion === "pick_up" || emotion === "throw" || emotion === "drink") return "neutral";
   }
 
   if (opcode === "SPEAK") return "neutral";
@@ -79,7 +81,10 @@ export const createExpressionState = (charId) => ({
   // Speaking state: enables micro-pulse animation
   isSpeaking: false,
   // Emotion pop: 1.0 on expression change, decays to 0 over ~250ms
-  emotionPop: 0
+  emotionPop: 0,
+  // One-shot physical gesture overlay animation (uses performance.now() like enterTime/blink)
+  gestureType: null,       // "pick_up" | "throw" | "drink" | null
+  gestureStartedAt: null   // performance.now() timestamp when gesture triggered
 });
 
 /**
@@ -96,6 +101,18 @@ export const addExpression = (state, key, canvas) => {
   if (key === state.targetKey && state.currentKey !== key) {
     state.crossfadeProgress = 0;
   }
+};
+
+/**
+ * Trigger a one-shot physical gesture animation (pick_up, throw, drink).
+ * Uses performance.now() for timing — consistent with enterTime/blink patterns.
+ *
+ * @param {object} state - Expression state from createExpressionState().
+ * @param {string} gestureType - "pick_up" | "throw" | "drink".
+ */
+export const triggerGesture = (state, gestureType) => {
+  state.gestureType = gestureType;
+  state.gestureStartedAt = performance.now();
 };
 
 /**
@@ -174,6 +191,90 @@ const getEntrySquash = (state) => {
   if (t >= 1.0) state.enterTime = null;
 
   return { scaleX, scaleY };
+};
+
+const GESTURE_DURATION_MS = 700;
+
+/**
+ * Draw a one-shot physical gesture overlay (arm arc) on the character.
+ * Called inside drawCharacter when gestureStartedAt is set.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {object} state - Expression state (gestureType, gestureStartedAt).
+ * @param {number} drawX - Portrait center X (0 in local transform).
+ * @param {number} drawY - Portrait top Y (negative drawH in local transform).
+ * @param {number} drawW - Portrait draw width.
+ * @param {number} drawH - Portrait draw height.
+ */
+const drawGestureOverlay = (ctx, state, drawX, drawY, drawW, drawH) => {
+  const elapsed = performance.now() - state.gestureStartedAt;
+  const t = Math.min(1.0, elapsed / GESTURE_DURATION_MS);
+  if (t >= 1.0) { state.gestureType = null; state.gestureStartedAt = null; return; }
+
+  // arc progress: sin curve peaks at mid-animation (t=0.5)
+  const arc = Math.sin(t * Math.PI);
+
+  ctx.save();
+  ctx.globalAlpha = (1 - t) * 0.75;  // fade out as gesture ends
+  ctx.strokeStyle = "rgba(40,20,0,0.7)";
+  ctx.lineWidth = drawW * 0.07;
+  ctx.lineCap = "round";
+
+  const shoulderX = drawX + drawW * 0.28;
+  const shoulderY = drawY + drawH * 0.28;  // upper chest area
+
+  if (state.gestureType === "pick_up") {
+    // Arm arcs downward (toward floor) and back — simulates bending to pick up
+    const peakX = shoulderX + drawW * 0.15;
+    const peakY = shoulderY + drawH * 0.55 * arc;  // extend downward at peak
+    ctx.beginPath();
+    ctx.moveTo(shoulderX, shoulderY);
+    ctx.quadraticCurveTo(peakX, shoulderY + drawH * 0.3 * arc, peakX, peakY);
+    ctx.stroke();
+    // Small circle at hand tip (the stone being picked up)
+    ctx.beginPath();
+    ctx.arc(peakX, peakY, drawW * 0.06, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(130,100,70,0.8)";
+    ctx.fill();
+  } else if (state.gestureType === "throw") {
+    // Arm arcs forward-upward — simulates throwing motion
+    const extendX = shoulderX + drawW * 0.45 * arc;
+    const extendY = shoulderY - drawH * 0.15 * arc;  // slight upward angle
+    ctx.beginPath();
+    ctx.moveTo(shoulderX, shoulderY);
+    ctx.quadraticCurveTo(
+      shoulderX + drawW * 0.2 * arc, shoulderY - drawH * 0.05,
+      extendX, extendY
+    );
+    ctx.stroke();
+    // Projectile stone that travels forward and fades
+    if (t > 0.3) {
+      const stoneProgress = (t - 0.3) / 0.7;
+      const stoneX = extendX + drawW * 0.3 * stoneProgress;
+      const stoneY = extendY + drawH * 0.1 * stoneProgress;
+      ctx.globalAlpha = (1 - stoneProgress) * 0.7;
+      ctx.beginPath();
+      ctx.arc(stoneX, stoneY, drawW * 0.05, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(110,90,70,0.85)";
+      ctx.fill();
+    }
+  } else if (state.gestureType === "drink") {
+    // Arm arcs upward toward head — simulates drinking from vessel
+    const vesselX = shoulderX + drawW * 0.1;
+    const vesselY = shoulderY - drawH * 0.18 * arc;
+    ctx.beginPath();
+    ctx.moveTo(shoulderX, shoulderY + drawH * 0.05);
+    ctx.quadraticCurveTo(vesselX, shoulderY - drawH * 0.08 * arc, vesselX, vesselY);
+    ctx.stroke();
+    // Small cup/vessel outline at tip
+    ctx.beginPath();
+    ctx.arc(vesselX, vesselY, drawW * 0.07, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(80,140,200,0.7)";
+    ctx.lineWidth = drawW * 0.04;
+    ctx.stroke();
+  }
+
+  ctx.restore();
 };
 
 /**
@@ -361,6 +462,12 @@ export const drawCharacter = (ctx, state, beat, dt, slotX, slotY, slotW, slotH, 
     ctx.fillStyle = "rgba(20, 10, 5, 1)";
     ctx.fillRect(drawX, drawY, drawW, blinkH);
     ctx.globalAlpha = globalAlpha;
+  }
+
+  // One-shot physical gesture overlay (pick_up, throw, drink).
+  // drawX=0, drawY=-drawH because ctx is translated so feet are at (0,0).
+  if (state.gestureType && state.gestureStartedAt !== null) {
+    drawGestureOverlay(ctx, state, 0, -drawH, drawW, drawH);
   }
 
   ctx.restore();
