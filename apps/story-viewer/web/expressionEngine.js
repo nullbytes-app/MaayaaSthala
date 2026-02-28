@@ -189,8 +189,9 @@ const getEntrySquash = (state) => {
  * @param {number} slotW - Slot width (180px recommended).
  * @param {number} slotH - Slot height (340px recommended).
  * @param {number} [globalAlpha=1.0] - Alpha override for spotlight dimming.
+ * @param {boolean} [isMoving=false] - Whether the character is currently walking to a new position.
  */
-export const drawCharacter = (ctx, state, beat, dt, slotX, slotY, slotW, slotH, globalAlpha = 1.0) => {
+export const drawCharacter = (ctx, state, beat, dt, slotX, slotY, slotW, slotH, globalAlpha = 1.0, isMoving = false) => {
   updateCrossfade(state, dt);
   updateBlink(state);
 
@@ -254,14 +255,21 @@ export const drawCharacter = (ctx, state, beat, dt, slotX, slotY, slotW, slotH, 
   ctx.save();
   ctx.globalAlpha = globalAlpha;
 
+  // Walk cycle physics: sinusoidal Y-bob + lean when moving.
+  // Reason: without walk cycle, characters slide mechanically; this creates the
+  // illusion of actual footsteps. Bob uses Math.abs for always-upward bounce.
+  const walkBob = isMoving ? Math.abs(Math.sin(beat * 4)) * 4 : 0; // 0–4px upward
+  const walkLean = isMoving ? Math.sin(beat * 4) * 0.03 : 0; // ±0.03 rad (~1.7°) lean
+
   // Translate to feet anchor; scale transforms are applied relative to this point.
-  ctx.translate(slotX, slotY + breathLift + speakBob);
+  // walkBob is subtracted because canvas Y increases downward — subtracting moves character UP.
+  ctx.translate(slotX, slotY + breathLift + speakBob - walkBob);
 
   // Idle sway — desynchronized per character using charId char code as phase offset.
   // Reason: without a phase offset every character sways in unison, which looks mechanical.
   const swayPhase = state.charId ? state.charId.charCodeAt(0) * 0.7 : 0;
   const idleSway = Math.sin(beat * 0.3 + swayPhase) * 0.015; // ±0.015 radians (~0.86°)
-  ctx.rotate(idleSway);
+  ctx.rotate(idleSway + walkLean); // walkLean adds to idleSway; does not replace it
 
   ctx.scale(totalScaleX, totalScaleY);
 

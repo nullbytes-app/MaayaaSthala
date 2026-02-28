@@ -303,6 +303,10 @@ export const createStageRenderer = (canvas) => {
       // Character alpha from spotlight.
       const charAlpha = spotlight.getAlpha(charId) * depthScale;
 
+      // Character is moving when it has not yet reached its target position.
+      const isMoving = artifact.targetX !== undefined &&
+        Math.abs(artifact.x - artifact.targetX) > 5;
+
       // Draw character portrait with expression crossfade + micro-animations.
       drawCharacter(
         ctx,
@@ -313,7 +317,8 @@ export const createStageRenderer = (canvas) => {
         y,
         SLOT_W * depthScale,
         SLOT_H * depthScale,
-        charAlpha
+        charAlpha,
+        isMoving  // walk cycle physics
       );
     }
 
