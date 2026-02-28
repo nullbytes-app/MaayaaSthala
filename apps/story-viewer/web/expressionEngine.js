@@ -267,28 +267,71 @@ export const drawCharacter = (ctx, state, beat, dt, slotX, slotY, slotW, slotH, 
   const drawX = -drawW / 2;
   const drawY = -drawH; // anchored at bottom (feet)
 
+  // Head/body split — draw portrait in two parts so the head can bob independently
+  // during speech without moving the body. headFraction=0.40 matches typical portrait
+  // composition where the face occupies the top ~40% of a full-body image.
+  const headFraction = 0.40; // top 40% = head; bottom 60% = body
+
+  // Speaking head bob: independent sinusoidal offset at 3Hz — faster than the
+  // whole-body speakBob (2Hz) so it reads as mouth/jaw movement rather than
+  // body sway. Amplitude kept at ±1.5px to stay subtle.
+  const headBob = state.isSpeaking ? Math.sin(beat * 3) * 1.5 : 0;
+
+  /**
+   * Draw a single portrait canvas split into body (bottom 60%) then head (top 40%).
+   * Head gets a vertical headBob offset; body stays anchored to transform origin.
+   *
+   * @param {HTMLCanvasElement} canvas - Portrait canvas to draw.
+   */
+  const drawSplit = (canvas) => {
+    const cW = canvas.width || canvas.naturalWidth || drawW;
+    const cH = canvas.height || canvas.naturalHeight || drawH;
+
+    const headSrcH  = Math.floor(cH * headFraction);
+    const bodySrcH  = cH - headSrcH;
+    const headDrawH = Math.floor(drawH * headFraction);
+    const bodyDrawH = drawH - headDrawH;
+
+    // Body (bottom 60%) — drawn first so head overlaps the seam naturally.
+    ctx.drawImage(
+      canvas,
+      0, headSrcH, cW, bodySrcH,            // source: bottom 60%
+      drawX, drawY + headDrawH, drawW, bodyDrawH  // dest: lower portion of slot
+    );
+
+    // Head (top 40%) — offset by headBob when speaking.
+    ctx.drawImage(
+      canvas,
+      0, 0, cW, headSrcH,                   // source: top 40%
+      drawX, drawY + headBob, drawW, headDrawH    // dest: upper portion with bob
+    );
+  };
+
   if (state.crossfadeProgress >= 1.0 || !targetImg || currentImg === targetImg) {
-    // No crossfade active — draw current directly.
+    // No crossfade active — draw current directly (split).
     if (currentImg) {
-      ctx.drawImage(currentImg, drawX, drawY, drawW, drawH);
+      drawSplit(currentImg);
     }
   } else {
     // Crossfade: draw current at (1 - progress) alpha, target at progress alpha.
+    // Both draws use the head/body split so the bob applies throughout the transition.
     const fromAlpha = easeInOutCubic(1 - state.crossfadeProgress);
     const toAlpha = easeInOutCubic(state.crossfadeProgress);
 
     if (currentImg) {
       ctx.globalAlpha = globalAlpha * fromAlpha;
-      ctx.drawImage(currentImg, drawX, drawY, drawW, drawH);
+      drawSplit(currentImg);
     }
     if (targetImg) {
       ctx.globalAlpha = globalAlpha * toAlpha;
-      ctx.drawImage(targetImg, drawX, drawY, drawW, drawH);
+      drawSplit(targetImg);
     }
     ctx.globalAlpha = globalAlpha;
   }
 
-  // Blink simulation: brief alpha dip on upper 20% of the image.
+  // Blink simulation: brief alpha dip on the upper 20% of the FULL character area.
+  // Intentionally not split — the blink rect spans the whole portrait width/height
+  // so it correctly dims whichever part of the face is visible regardless of bob offset.
   if (state.blinkActive) {
     const blinkH = drawH * 0.2;
     ctx.globalAlpha = globalAlpha * 0.25; // dim to 25% alpha (eyelid over face)
