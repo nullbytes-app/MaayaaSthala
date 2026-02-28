@@ -212,9 +212,11 @@ if (chatMessagesEl) {
         if (isNarration) {
           // Narration goes to the caption overlay (full-width bar at bottom of stage).
           const clean = text.replace(/^\*|\*$/g, "");
-          chatRenderer?.setCaption?.(clean, "Narrator");
-          renderer?.setCaption?.(clean, "Narrator");
-          speakText(clean, false);
+          if (clean.trim()) {
+            chatRenderer?.setCaption?.(clean, "Narrator");
+            renderer?.setCaption?.(clean, "Narrator");
+            speakText(clean, false);
+          }
         } else if (isDialogue) {
           // Dialogue goes to speech bubbles on both renderers.
           // The concurrent stage_command (SPEAK opcode) already calls applyFrame →
@@ -225,9 +227,16 @@ if (chatMessagesEl) {
           // calling setSpeechBubble with role="" falls back to a centred bubble,
           // which is acceptable until a speaker field is added to AgentStreamMessage.
           const clean = text.replace(/^"|"$/g, "");
-          chatRenderer?.setSpeechBubble?.("", clean, "neutral");
-          renderer?.setSpeechBubble?.("", clean, "neutral");
-          speakText(clean, true);
+          if (clean.trim()) {
+            chatRenderer?.setSpeechBubble?.("", clean, "neutral");
+            renderer?.setSpeechBubble?.("", clean, "neutral");
+            speakText(clean, true);
+          }
+        } else {
+          // Malformed or unrecognized format — treat as narration fallback
+          chatRenderer?.setCaption?.(text, "Narrator");
+          renderer?.setCaption?.(text, "Narrator");
+          speakText(text, false);
         }
         // Still send to chat panel for the transcript.
         panel.handleMessage(message);
