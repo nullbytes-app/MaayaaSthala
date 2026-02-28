@@ -645,8 +645,8 @@ export const createStageRenderer = (canvas) => {
       const loadAndStore = (url, key) => {
         if (!url) return;
 
-        // Skip bg removal for SVG/stub placeholders.
-        if (url.includes("/generated/")) {
+        // Skip bg removal for AI-generated portraits and SVG placeholders (already transparent).
+        if (url.includes("/generated/") || url.startsWith("data:image/svg")) {
           const img = new Image();
           img.crossOrigin = "anonymous";
           img.onload = () => {

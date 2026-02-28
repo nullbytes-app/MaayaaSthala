@@ -31,23 +31,17 @@ const hashString = (value: string): number => {
 export const renderSvgPlaceholder = (charId: string, name: string): string => {
   const hash = hashString(charId);
   const hue = hash % 360;
-  const hueDark = (hue + 18) % 360;
   const hueLight = (hue + 320) % 360;
   const title = escapeSvgText(name);
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="${title}">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="hsl(${hueDark} 56% 22%)"/>
-      <stop offset="100%" stop-color="hsl(${hue} 62% 33%)"/>
-    </linearGradient>
     <linearGradient id="puppet" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="hsl(${hueLight} 68% 66%)"/>
       <stop offset="100%" stop-color="hsl(${hue} 58% 48%)"/>
     </linearGradient>
   </defs>
-  <rect width="256" height="256" fill="url(#bg)"/>
   <g transform="translate(128 146)">
     <ellipse cx="0" cy="-56" rx="16" ry="20" fill="url(#puppet)"/>
     <path d="M -22 -37 Q -30 -11 -25 27 L -19 63 L 19 63 L 25 27 Q 30 -11 22 -37 Z" fill="url(#puppet)"/>

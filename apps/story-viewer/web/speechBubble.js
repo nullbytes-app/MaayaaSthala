@@ -362,11 +362,15 @@ export function createSpeechBubbleSystem() {
       const bw = textW;
       const bh = textH;
 
-      // Default position: centered above character head
+      // Default position: centered above character head.
+      // Head top is ~85% of the slot height above the feet position (charY).
+      // Reason: artifact.y is the floor/feet position; the head occupies roughly
+      // the top 15% of the slot, so head-top ≈ charY - charH * 0.85.
+      const headTopY = charY - charH * 0.85;
       let bx = charX - bw / 2;
-      let by = charY - charH - bh - 12; // 12px above head top
+      let by = headTopY - bh - 12; // 12px clearance above head top
 
-      // Clamp to canvas bounds
+      // Clamp to canvas bounds so the bubble is always fully visible.
       bx = Math.max(MARGIN, Math.min((canvas?.width ?? CANVAS_W) - bw - MARGIN, bx));
       by = Math.max(MARGIN, Math.min((canvas?.height ?? CANVAS_H) - bh - MARGIN, by));
 
