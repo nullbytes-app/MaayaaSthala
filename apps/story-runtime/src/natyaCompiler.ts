@@ -75,7 +75,13 @@ const laneByOpcode: Record<string, RuntimeStageCommand["lane"]> = {
   ENTER: "puppet",
   EXIT: "puppet",
   MOVE: "puppet",
-  EMOTE: "puppet"
+  EMOTE: "puppet",
+  // Mood opcode — sets the ambient emotional tone of the scene.
+  MOOD: "control",
+  // Director opcodes — injected by Rangmanch at runtime, not written by story generator.
+  CAMERA: "control",
+  EFFECT: "control",
+  SPOTLIGHT: "control"
 };
 
 export const compileNatyaScript = (input: CompileInput): RuntimeStageCommand[] => {

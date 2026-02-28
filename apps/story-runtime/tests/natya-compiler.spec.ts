@@ -33,6 +33,48 @@ describe("natya compiler", () => {
     expect(commands[3]?.target.artifactId).toBe("shadow_double_v1");
   });
 
+  it("routes SPEAK and GESTURE to their role's artifactId", () => {
+    const multiCharScript = `
+@1 SCENE_OPEN scene=forest setting=A forest
+@2 SPEAK role=c_crow text=I am the clever crow
+@3 GESTURE role=c_fox gesture=bow
+@4 SCENE_CLOSE scene=forest
+`;
+    const commands = compileNatyaScript({
+      storyId: "multi_char_test",
+      script: multiCharScript,
+      resolvedArtifactId: "gemini_c_crow_001",
+      roleArtifactIds: {
+        c_crow: "gemini_c_crow_001",
+        c_fox: "gemini_c_fox_002"
+      }
+    });
+
+    const speakCmd = commands.find(c => c.opcode === "SPEAK");
+    const gestureCmd = commands.find(c => c.opcode === "GESTURE");
+    expect(speakCmd?.target.artifactId).toBe("gemini_c_crow_001");
+    expect(gestureCmd?.target.artifactId).toBe("gemini_c_fox_002");
+  });
+
+  it("parses MOOD opcode into the control lane with mood payload", () => {
+    const moodScript = `
+@1 SCENE_OPEN rasa=adbhuta tala=adi
+@2 MOOD mood=scary
+@3 SCENE_CLOSE nextSceneId=end
+`;
+    const commands = compileNatyaScript({
+      storyId: "mood_test",
+      script: moodScript,
+      resolvedArtifactId: "hero_v1"
+    });
+
+    const moodCmd = commands.find(c => c.opcode === "MOOD");
+    expect(moodCmd).toBeDefined();
+    expect(moodCmd?.opcode).toBe("MOOD");
+    expect(moodCmd?.payload.mood).toBe("scary");
+    expect(moodCmd?.lane).toBe("control");
+  });
+
   it("supports runtime execution from compiled commands", async () => {
     const commands = compileNatyaScript({
       storyId: "natya_story_2",
