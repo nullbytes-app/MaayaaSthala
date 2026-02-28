@@ -343,7 +343,14 @@ export const createStageRenderer = (canvas) => {
     }
 
     // Speech bubbles drawn inside camera transform so they shake/zoom with the scene.
-    speechBubbles.draw(ctx, state.artifacts, canvas);
+    // Build role-keyed view for speech bubble positioning (state.artifacts is keyed by artifactId)
+    const artifactsByRole = {};
+    for (const [, artifact] of Object.entries(state.artifacts)) {
+      if (artifact.charId) {
+        artifactsByRole[artifact.charId] = artifact;
+      }
+    }
+    speechBubbles.draw(ctx, artifactsByRole, canvas);
 
     camera?.restoreTransform(ctx);
 
