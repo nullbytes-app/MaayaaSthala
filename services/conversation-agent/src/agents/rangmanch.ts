@@ -1,6 +1,6 @@
 import { matchCharactersToLibrary } from "../tools/characterBrowser.js";
 import { compileAndRunPlay } from "../tools/playCompiler.js";
-import { DEFAULT_VOICE_PALETTE, type VoiceCasting } from "../tools/audioNarrator.js";
+import { type VoiceCasting } from "../tools/audioNarrator.js";
 import { generateExpressionVariants } from "../providerRouter.js";
 import type { ConversationSession, CharacterAsset } from "../types.js";
 import type { TheatreAgent, AgentDeps, MessageHandler, RangmanchInput } from "./types.js";
@@ -104,19 +104,45 @@ export const rangmanch: TheatreAgent<RangmanchInput, void> = {
       // No need to await expressionPromises here; they stream via character_expression_update.
       // We do a detached race: if all variants finish before play ends, great; if not, play proceeds.
 
-      // Generate voice casting from the approved character list so each character
-      // gets a distinct TTS voice rather than all sharing the same default.
-      // Reason: voiceCasting was never passed to compileAndRunPlay, causing every
-      // character to fall back to the same "en-IN-Neural2-D" voice in audioNarrator.
-      const voices = DEFAULT_VOICE_PALETTE["en-IN"];
-      const voiceCasting: VoiceCasting = {
-        narrator: { voice: "en-IN-Neural2-A", rate: 0.85, pitch: -1.0 }
+      // Generate voice casting from story character descriptions so each character
+      // receives a gender- and role-appropriate TTS voice.
+      // Uses text heuristics on archetype + description to detect:
+      //   - female vs male gender → female voices (A/B) or male voices (C/D)
+      //   - villain/antagonist → deep male voice with lower pitch
+      //   - child → brighter voice with higher pitch and faster rate
+      //   - elderly → slower rate, slight pitch adjustment
+      //   - narrator → deep authoritative storyteller voice (C)
+      const storyCharMap = new Map(
+        input.story.characters.map(c => [c.charId, c])
+      );
+
+      const castVoice = (charId: string): { voice: string; rate: number; pitch: number } => {
+        const sc = storyCharMap.get(charId);
+        const tokens = [sc?.archetype ?? "", sc?.description ?? "", sc?.name ?? charId].join(" ").toLowerCase();
+
+        const isFemale = /\b(female|woman|girl|grandmother|mother|sister|aunt|princess|queen|dadi|nani|amma|mata|beti|ladki|she|her)\b/.test(tokens);
+        const isVillain = /\b(villain|antagonist|evil|wicked|sinister|dark|corrupt|demon|monster|daaku|rakshak)\b/.test(tokens);
+        const isChild = /\b(child|kid|young boy|chotu|baccha|ladka|betu|beta)\b/.test(tokens) ||
+          (/\b(young|little)\b/.test(tokens) && !isFemale);
+        const isElderly = /\b(old|elder|ancient|grand|dadi|dada|nani|nana|aged|wise|wrinkled)\b/.test(tokens);
+        const isElderFemale = isFemale && isElderly;
+
+        // Assign voice + prosody
+        if (isElderFemale) return { voice: "en-IN-Neural2-B", rate: 0.88, pitch: 1.5 };   // soft elderly female
+        if (isFemale)      return { voice: "en-IN-Neural2-A", rate: 1.0,  pitch: 2.0 };   // warm female
+        if (isVillain)     return { voice: "en-IN-Neural2-C", rate: 0.82, pitch: -4.0 };  // deep menacing
+        if (isChild)       return { voice: "en-IN-Neural2-D", rate: 1.08, pitch: 4.0 };   // bright quick child
+        if (isElderly)     return { voice: "en-IN-Neural2-C", rate: 0.88, pitch: -2.0 };  // deep elderly male
+        return               { voice: "en-IN-Neural2-D", rate: 1.0,  pitch: 0.0 };        // default male
       };
-      Array.from(characters.keys()).forEach((charId, i) => {
-        // Rotate through the palette so each character gets a different voice.
-        const paletteEntry = voices[i % voices.length];
-        voiceCasting[charId] = { voice: paletteEntry.id, rate: 1.0, pitch: 0.0 };
-      });
+
+      const voiceCasting: VoiceCasting = {
+        // Narrator: deep storyteller voice — authoritative but measured
+        narrator: { voice: "en-IN-Neural2-C", rate: 0.85, pitch: -2.0 }
+      };
+      for (const charId of characters.keys()) {
+        voiceCasting[charId] = castVoice(charId);
+      }
 
       await compileAndRunPlay(
         { story, approvedCharacters: characters },
