@@ -200,6 +200,7 @@ function drawThoughtBubble(ctx, bx, by, bw, bh, tailX, tailY) {
 
 const EMOTION_SHAPE = {
   angry: "shout",
+  anger: "shout",   // alias for angry
   excited: "shout",
   shout: "shout",
   whisper: "whisper",
@@ -296,8 +297,8 @@ export function createSpeechBubbleSystem() {
         }
       } else {
         // Pop-in: spring toward scale=1
-        b.scale = Math.min(1, b.scale + dt * 8);
-        b.opacity = Math.min(1, b.opacity + dt * 8);
+        b.scale = Math.min(1, b.scale + (1 - b.scale) * Math.min(1, dt * 8));
+        b.opacity = Math.min(1, b.opacity + (1 - b.opacity) * Math.min(1, dt * 8));
         // Typewriter reveal
         if (b.scale > 0.5) {
           b.textProgress = Math.min(1, b.textProgress + (dt * 30) / Math.max(1, b.textLength));
