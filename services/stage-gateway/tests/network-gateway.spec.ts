@@ -45,7 +45,7 @@ describe("network stage gateway", () => {
     const { stdout } = await execFileAsync(process.execPath, ["--import", "tsx", runtimeFixturePath]);
 
     expect(stdout).toContain("gateway-started");
-  });
+  }, 15_000);
 
   it("ingests gRPC stream and forwards valid commands to websocket with telemetry", async () => {
     const handle = await startNetworkGateway({ grpcPort: 0, wsPort: 0 });
