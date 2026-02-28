@@ -123,6 +123,34 @@ const ROUTES: RouteDefinition[] = [
   {
     method: "GET",
     path: "/viewer/chatPanel.js"
+  },
+  {
+    method: "GET",
+    path: "/viewer/voiceInput.js"
+  },
+  {
+    method: "GET",
+    path: "/viewer/sceneTransition.js"
+  },
+  {
+    method: "GET",
+    path: "/viewer/expressionEngine.js"
+  },
+  {
+    method: "GET",
+    path: "/viewer/cinematicEffects.js"
+  },
+  {
+    method: "GET",
+    path: "/viewer/moodEngine.js"
+  },
+  {
+    method: "GET",
+    path: "/viewer/speechBubble.js"
+  },
+  {
+    method: "GET",
+    path: "/viewer/audioSync.js"
   }
 ];
 
@@ -174,6 +202,34 @@ const VIEWER_ASSETS: Record<string, { filePath: string; contentType: string }> =
   "/viewer/chatPanel.js": {
     filePath: fileURLToPath(new URL("../../../apps/story-viewer/web/chatPanel.js", import.meta.url)),
     contentType: "text/javascript; charset=utf-8"
+  },
+  "/viewer/voiceInput.js": {
+    filePath: fileURLToPath(new URL("../../../apps/story-viewer/web/voiceInput.js", import.meta.url)),
+    contentType: "text/javascript; charset=utf-8"
+  },
+  "/viewer/sceneTransition.js": {
+    filePath: fileURLToPath(new URL("../../../apps/story-viewer/web/sceneTransition.js", import.meta.url)),
+    contentType: "text/javascript; charset=utf-8"
+  },
+  "/viewer/expressionEngine.js": {
+    filePath: fileURLToPath(new URL("../../../apps/story-viewer/web/expressionEngine.js", import.meta.url)),
+    contentType: "text/javascript; charset=utf-8"
+  },
+  "/viewer/cinematicEffects.js": {
+    filePath: fileURLToPath(new URL("../../../apps/story-viewer/web/cinematicEffects.js", import.meta.url)),
+    contentType: "text/javascript; charset=utf-8"
+  },
+  "/viewer/moodEngine.js": {
+    filePath: fileURLToPath(new URL("../../../apps/story-viewer/web/moodEngine.js", import.meta.url)),
+    contentType: "text/javascript; charset=utf-8"
+  },
+  "/viewer/speechBubble.js": {
+    filePath: fileURLToPath(new URL("../../../apps/story-viewer/web/speechBubble.js", import.meta.url)),
+    contentType: "text/javascript; charset=utf-8"
+  },
+  "/viewer/audioSync.js": {
+    filePath: fileURLToPath(new URL("../../../apps/story-viewer/web/audioSync.js", import.meta.url)),
+    contentType: "text/javascript; charset=utf-8"
   }
 };
 
@@ -200,25 +256,17 @@ const hashString = (value: string): number => {
 const renderGeneratedPreviewSvg = (artifactId: string): string => {
   const hash = hashString(artifactId);
   const hue = hash % 360;
-  const hueDark = (hue + 18) % 360;
   const hueLight = (hue + 320) % 360;
   const title = escapeSvgText(artifactId);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="${title}">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="hsl(${hueDark} 56% 22%)"/>
-      <stop offset="100%" stop-color="hsl(${hue} 62% 33%)"/>
-    </linearGradient>
     <linearGradient id="puppet" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="hsl(${hueLight} 68% 66%)"/>
       <stop offset="100%" stop-color="hsl(${hue} 58% 48%)"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" fill="url(#bg)"/>
-  <ellipse cx="256" cy="246" rx="170" ry="150" fill="rgba(250,220,160,0.18)"/>
-  <ellipse cx="256" cy="418" rx="182" ry="54" fill="rgba(22,10,8,0.45)"/>
   <g transform="translate(256 292)">
     <ellipse cx="0" cy="-112" rx="32" ry="40" fill="url(#puppet)" stroke="rgba(45,20,12,0.85)" stroke-width="4"/>
     <path d="M -44 -74 Q -60 -22 -50 54 L -38 126 L 38 126 L 50 54 Q 60 -22 44 -74 Z" fill="url(#puppet)" stroke="rgba(45,20,12,0.85)" stroke-width="4"/>
@@ -606,12 +654,20 @@ export const createResolverHttpServer = async (
   // Wire in the chat WebSocket server on the same HTTP port if enabled.
   let closeChatWs: (() => void) | undefined;
   if (conversationEnabled) {
-    const agentRunner = createAgentFromEnv(env);
-    closeChatWs = attachChatWebSocketServer(server, agentRunner, {
-      gcpProject: env.GOOGLE_CLOUD_PROJECT,
-      gcpLocation: env.GOOGLE_CLOUD_LOCATION,
-      stitchMcpAvailable: env.STITCH_MCP_AVAILABLE?.trim().toLowerCase() === "true"
-    });
+    const runners = createAgentFromEnv(env);
+    const apiKey =
+      env.GEMINI_API_KEY ?? env.GOOGLE_GENAI_API_KEY ?? env.GOOGLE_API_KEY;
+    closeChatWs = attachChatWebSocketServer(
+      server,
+      runners?.conversational,
+      {
+        gcpProject: env.GOOGLE_CLOUD_PROJECT,
+        gcpLocation: env.GOOGLE_CLOUD_LOCATION,
+        stitchMcpAvailable: env.STITCH_MCP_AVAILABLE?.trim().toLowerCase() === "true",
+        apiKey
+      },
+      runners?.json
+    );
   }
 
   return {

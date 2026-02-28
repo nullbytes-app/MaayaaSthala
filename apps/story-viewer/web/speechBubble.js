@@ -18,7 +18,7 @@
 const CANVAS_W = 720;
 const CANVAS_H = 420;
 const MARGIN = 10;          // min distance from canvas edge
-const MAX_BUBBLE_W = 220;   // max bubble width (text wraps within this)
+const MAX_BUBBLE_W = 300;   // max bubble width (text wraps within this)
 const SLOT_H = 340;         // character slot height (feet-to-top)
 const HEAD_FRACTION = 0.40; // top 40% of slot = head area
 
@@ -253,7 +253,7 @@ export function createSpeechBubbleSystem() {
       // Animation state
       scale: existing ? existing.scale : 0,  // spring from 0 (or current if replacing)
       opacity: 0,
-      textProgress: 0,     // typewriter 0..1
+      textProgress: 1,     // show full text immediately — audio is already playing
       popping: false,       // true when dismissing
       textLength: text.length,
       // Text line cache — avoids re-running measureText every frame when text is unchanged
@@ -355,7 +355,10 @@ export function createSpeechBubbleSystem() {
         b.cachedText = rawText;
       }
       const lines = b.cachedLines;
-      const lineHeight = parseInt(ctx.font) + 4;
+      // Extract font size in px using regex — parseInt(ctx.font) fails for fonts
+      // with style/weight prefixes like "bold 16px ..." or "italic 12px ...".
+      const fontSizePx = parseInt(ctx.font.match(/(\d+)px/)?.[1] ?? "14");
+      const lineHeight = fontSizePx + 4;
       const textW = Math.min(MAX_BUBBLE_W, Math.max(...lines.map(l => ctx.measureText(l).width)) + 24);
       const textH = lines.length * lineHeight + 20;
 
