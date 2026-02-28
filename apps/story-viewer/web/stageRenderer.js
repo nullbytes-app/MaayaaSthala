@@ -284,6 +284,12 @@ export const createStageRenderer = (canvas) => {
     if (moodPreset.camera.shakeIntensity > 0) {
       camera?.shake(moodPreset.camera.shakeIntensity * 0.1); // small shake nudge per frame
     }
+    // Connect atmospheric particle preset from mood.
+    if (moodPreset.particles) {
+      particles.setContinuous(moodPreset.particles);
+    } else {
+      particles.clearContinuous();
+    }
 
     // Apply camera transform before drawing characters.
     camera?.applyTransform(ctx);
