@@ -30,6 +30,30 @@ Available tools:
 - generate_narration_audio: Converts narration text to audio
 - compile_and_run_play: Compiles NatyaScript and runs the puppet play
 
+**Voice Casting** — when calling compile_and_run_play, include a voiceCasting object that assigns
+each character a distinct voice from the available Google TTS palette:
+
+Available voices:
+- en-IN-Neural2-A: Female, warm and clear (best for narrators, mothers, gentle characters)
+- en-IN-Neural2-B: Female, soft and nurturing (best for young girls, gentle characters)
+- en-IN-Neural2-C: Male, deep and authoritative (best for elders, villains, kings)
+- en-IN-Neural2-D: Male, bright and energetic (best for boys, heroes, comic characters)
+
+Voice casting example:
+{
+  "narrator": { "voice": "en-IN-Neural2-A", "rate": 0.85, "pitch": -1.0 },
+  "Meera": { "voice": "en-IN-Neural2-B", "rate": 1.0, "pitch": 1.5 },
+  "Raja": { "voice": "en-IN-Neural2-D", "rate": 1.1, "pitch": 0.0 },
+  "Grandmother": { "voice": "en-IN-Neural2-A", "rate": 0.8, "pitch": -1.5 },
+  "Tiger": { "voice": "en-IN-Neural2-C", "rate": 0.75, "pitch": -3.0 }
+}
+
+Voice casting guidelines:
+- Match voice gender to character gender where possible
+- Use pitch to differentiate age: higher for children (+1 to +3), lower for elders (-1 to -3)
+- Use rate to convey personality: faster for energetic (1.1-1.2), slower for wise (0.75-0.85)
+- Narrator always uses Neural2-A with rate 0.85 and pitch -1.0
+
 Always respond in English with an Indian storytelling warmth. Begin responses with story-appropriate phrases.`;
 
 /**
@@ -188,6 +212,12 @@ Valid OPCODES:
 - EXIT role=<charId> to=<left|right> [style=<walk|hop|crawl|sneak|run>]
 - MOVE role=<charId> to=<left|center_left|center|center_right|right> [style=<walk|hop|crawl|sneak|run>]
 - EMOTE role=<charId> emotion=<angry|joyful|cunning|surprised|fearful|sad|listen>
+- MOOD mood=<joyful|tense|scary|peaceful|dramatic|sad>
+  - Signals a shift in emotional atmosphere to the stage engine
+  - The stage will apply matching lighting, particle effects, and camera behavior
+  - Include MOOD at the start of scenes or when emotional tone shifts significantly
+  - Valid moods: joyful, tense, scary, peaceful, dramatic, sad
+  - Example: @5 MOOD mood=scary
 
 **NatyaScript Rules**:
 - Beat numbers start at 1 and increase (not necessarily consecutive)
@@ -212,6 +242,7 @@ Valid OPCODES:
 - Vary emotional states through EMOTE — characters should not stay emotionally neutral
 - Physical actions matter: dropping/giving something = GESTURE gesture=raise_arm then EMOTE
 - Every character should move across the stage at least once — use MOVE to reposition
+- STAGE POSITIONS: When 2+ characters share the stage, always ENTER first character to=center_left and second to=center_right — NEVER position two characters at center+center_right or center+center_left simultaneously as this causes visual overlap. Use center ONLY when a single character is alone on stage. Dramatic approaches should EXIT one character first, then ENTER at a new position
 
 Example NatyaScript (theatrical with full choreography and walking animations):
 @1 SCENE_OPEN scene=river setting=A sunny riverbank with a large fruit tree and sparkling water
