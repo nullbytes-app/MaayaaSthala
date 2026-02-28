@@ -269,7 +269,7 @@ export const drawCharacter = (ctx, state, beat, dt, slotX, slotY, slotW, slotH, 
   // emotionPop starts at 1.0 and decays to 0 at rate dt*4 (~250ms total).
   // easeOutBack maps the remaining 1→0 range so the scale overshoots then settles.
   if (state.emotionPop > 0) {
-    const popProgress = easeOutBack(1.0 - state.emotionPop);
+    const popProgress = easeOutBack(state.emotionPop);
     const popScaleY = 1.0 + popProgress * 0.08; // peak: 8% taller
     const popScaleX = 1.0 / popScaleY;           // conservation of volume
     ctx.scale(popScaleX, popScaleY);

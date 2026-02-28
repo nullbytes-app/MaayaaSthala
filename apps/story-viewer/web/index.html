@@ -3,8 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Story AI — Interactive Puppet Theatre</title>
+    <title>Story AI — Cinematic Storybook</title>
     <link rel="stylesheet" href="/viewer/styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Patrick+Hand&family=Comic+Neue:wght@400;700&family=Architects+Daughter&display=swap" rel="stylesheet">
+    <!-- Preload animation modules for faster first-frame rendering -->
+    <link rel="modulepreload" href="/viewer/expressionEngine.js" />
+    <link rel="modulepreload" href="/viewer/cinematicEffects.js" />
   </head>
   <body>
     <header class="app-header">
@@ -57,6 +63,9 @@
             autocomplete="off"
             aria-label="Chat message"
           />
+          <button type="button" class="btn-mic" id="btn-mic" aria-label="Start voice input">
+            🎤
+          </button>
           <button type="submit" class="btn-send" aria-label="Send">
             ➤
           </button>
