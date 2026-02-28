@@ -1,4 +1,5 @@
 import type { RuntimeStageCommand } from "../../../apps/story-runtime/src/runtime.js";
+import type { TheatreState } from "./agents/types.js";
 
 /**
  * All message types the agent can stream to the viewer over WebSocket.
@@ -38,9 +39,21 @@ export type AgentStreamMessage =
   /**
    * Character portrait image for a cast member.
    * Emitted before play compilation for each approved character.
-   * Optional parts contain separate body-part images for articulated puppet animation.
+   * Optional expressions map contains expression variants for cinematic crossfade animation.
    */
-  | { type: "character_portrait"; charId: string; name: string; imageUrl: string; parts?: { head: string; torso: string; leftArm: string; rightArm: string; leftLeg: string; rightLeg: string } };
+  | { type: "character_portrait"; charId: string; name: string; imageUrl: string; parts?: { head: string; torso: string; leftArm: string; rightArm: string; leftLeg: string; rightLeg: string }; expressions?: ExpressionMap }
+  /**
+   * Hot-add a new expression variant for an already-registered character.
+   * Emitted as expression variants arrive (parallel generation after neutral).
+   * Frontend transitions to the new expression via crossfade when ready.
+   */
+  | { type: "character_expression_update"; charId: string; expressionKey: keyof ExpressionMap; imageUrl: string }
+  /**
+   * Global mood state change for the frontend mood engine.
+   * Emitted by the play compiler when a MOOD opcode is encountered.
+   * The frontend applies the new mood as a visual/audio atmosphere overlay.
+   */
+  | { type: "mood_change"; mood: string };
 
 /** Sent from the browser to the agent over WebSocket. */
 export type ChatInboundMessage =
@@ -53,6 +66,17 @@ export type ChatOutboundMessage =
   | { type: "agent_stream"; payload: AgentStreamMessage }
   | { type: "pong" }
   | { type: "session_start"; sessionId: string };
+
+/**
+ * Four expression variants per character for cinematic crossfade animation.
+ * Neutral is generated first and shown immediately; others stream in via character_expression_update.
+ */
+export type ExpressionMap = {
+  neutral: string;
+  happy?: string;
+  angry?: string;
+  sad?: string;
+};
 
 /**
  * Result from the story generator tool.
@@ -83,7 +107,9 @@ export type CharacterAsset = {
   hasParts: boolean;
   /** Separate body-part image URLs for articulated puppet animation. */
   parts?: { head: string; torso: string; leftArm: string; rightArm: string; leftLeg: string; rightLeg: string };
-  source: "library" | "stitch" | "stub" | "svg" | "vertex_ai";
+  /** Expression variant image URLs for cinematic crossfade animation. */
+  expressions?: ExpressionMap;
+  source: "library" | "stitch" | "stub" | "svg" | "vertex_ai" | "gemini";
 };
 
 /**
@@ -108,7 +134,9 @@ export type CharacterGenerationResult = {
   previewUrl: string;
   hasParts: boolean;
   parts?: Record<string, string>;
-  source: "stitch_mcp" | "stitch_stub" | "svg_placeholder" | "vertex_ai";
+  /** Expression variant image URLs streamed in after neutral. */
+  expressions?: ExpressionMap;
+  source: "stitch_mcp" | "stitch_stub" | "svg_placeholder" | "vertex_ai" | "gemini";
 };
 
 /**
@@ -134,4 +162,12 @@ export type ConversationSession = {
   approvedCharacters: Map<string, CharacterAsset>;
   pendingApprovals: Map<string, PendingApproval>;
   adkSessionId?: string;
+  /** Current theatre crew state machine phase. */
+  state: TheatreState;
+  /**
+   * Serializes concurrent user_message turns per session.
+   * Each new turn is chained onto this promise so turns execute one at a time.
+   * Reason: prevents overlapping approval loops and state corruption under rapid input.
+   */
+  activeTurn: Promise<void>;
 };

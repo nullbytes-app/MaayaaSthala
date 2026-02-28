@@ -17,6 +17,7 @@ import { createStageRenderer } from "./stageRenderer.js";
 import { createLiveAdapter } from "./liveAdapter.js";
 import { createChatClient, sendUserMessage, sendApprovalResponse } from "./chatClient.js";
 import { createChatPanel } from "./chatPanel.js";
+import { createVoiceInput } from "./voiceInput.js";
 
 // ===== Tab switching =====
 const tabChat = document.getElementById("tab-chat");
@@ -57,11 +58,17 @@ const setConnectionStatus = (state) => {
   label.textContent = state === "connected" ? "Connected" : state === "connecting" ? "Connecting..." : "Disconnected";
 };
 
+/** Track play state for routing captions to stage. */
+let isPlayActive = false;
+let lastNarrationText = null;
+
 /** Forward stage_command messages from the agent to the canvas renderer. */
 const handleStageCommand = (command) => {
   const frame = { beat: command.beat, label: `${command.opcode} @ beat ${command.beat}`, command };
+  // Render to both: chatRenderer (stage-canvas in Chat panel) and
+  // renderer (studio-stage-canvas in Stage panel — what the user sees).
   chatRenderer?.renderFrame(frame);
-  document.getElementById("timeline-output").textContent = `Beat ${command.beat}: ${command.opcode}`;
+  renderer?.renderFrame(frame);
 };
 
 let chatClient = null;
@@ -75,21 +82,149 @@ if (chatMessagesEl) {
     },
     onPlayStart: (storyTitle) => {
       chatRenderer?.reset();
+      renderer?.reset();
+      liveAdapter.stop();
+      // Re-apply portraits after reset — reset() clears the renderer's portrait map
+      // but character_portrait messages arrive before play_start, so we re-inject them.
+      for (const [charId, imageUrl] of characterPortraits) {
+        chatRenderer?.setCharacterPortrait?.(charId, imageUrl, null, characterExpressions.get(charId));
+        renderer?.setCharacterPortrait?.(charId, imageUrl, null, characterExpressions.get(charId));
+      }
       chatLiveAdapter.stop();
+      isPlayActive = true;
+      const timelineEl = document.getElementById("timeline-output");
+      if (timelineEl) timelineEl.textContent = storyTitle ? `Now playing: ${storyTitle}` : "Performance in progress…";
+    },
+    onInputEnabled: (enabled) => {
+      if (chatInput) {
+        chatInput.disabled = !enabled;
+      }
+      if (chatForm) {
+        const sendBtn = chatForm.querySelector(".btn-send");
+        if (sendBtn) sendBtn.disabled = !enabled;
+        chatForm.classList.toggle("chat-input-form--disabled", !enabled);
+      }
     }
   });
 
+  /** Track character portraits for canvas rendering (re-applied after reset). */
+  const characterPortraits = new Map();
+  /** Track pre-generated expression maps per charId (for re-apply after reset). */
+  const characterExpressions = new Map();
+
+  // ===== Browser TTS for voice narration =====
+  let ttsVoices = [];
+  const loadVoices = () => { ttsVoices = window.speechSynthesis?.getVoices() ?? []; };
+  loadVoices();
+  window.speechSynthesis?.addEventListener?.("voiceschanged", loadVoices);
+
+  // Chrome Web Speech API pauses after ~15s — keep alive with periodic pause/resume.
+  let ttsKeepAliveTimer = null;
+  const startTtsKeepAlive = () => {
+    if (ttsKeepAliveTimer) return;
+    ttsKeepAliveTimer = setInterval(() => {
+      if (window.speechSynthesis?.speaking) {
+        window.speechSynthesis.pause();
+        window.speechSynthesis.resume();
+      }
+    }, 10000);
+  };
+  const stopTtsKeepAlive = () => {
+    if (ttsKeepAliveTimer) {
+      clearInterval(ttsKeepAliveTimer);
+      ttsKeepAliveTimer = null;
+    }
+  };
+
+  const speakText = (text, isCharacter = false) => {
+    if (!window.speechSynthesis || !text?.trim()) return;
+    // Cancel current speech only if it's the same type (don't interrupt ongoing speech
+    // with a new utterance of same type — just queue); always cancel on explicit stops.
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    // Prefer Indian English voice; fall back to any en-IN or English voice.
+    const indianVoice =
+      ttsVoices.find(v => v.lang === "en-IN") ||
+      ttsVoices.find(v => v.lang.startsWith("en-IN")) ||
+      ttsVoices.find(v => v.lang.startsWith("en"));
+    if (indianVoice) utt.voice = indianVoice;
+    utt.lang = "en-IN";
+    utt.rate = isCharacter ? 1.05 : 0.88;
+    utt.pitch = isCharacter ? 1.1 : 0.85;
+    utt.volume = 0.9;
+    window.speechSynthesis.speak(utt);
+    startTtsKeepAlive();
+  };
+
   chatClient = createChatClient({
     onAgentMessage: (message) => {
-      // Route stage_command events to canvas; everything else to chat panel.
+      // Route canvas-specific events to renderer; everything else to chat panel.
       if (message.type === "stage_command") {
         handleStageCommand(message.command);
+      } else if (message.type === "scene_backdrop") {
+        // Apply backdrop to both renderers: chatRenderer (stage-canvas in chat panel)
+        // and renderer (studio-stage-canvas in Stage panel — what the user sees).
+        chatRenderer?.setBackdrop?.(message.imageUrl);
+        renderer?.setBackdrop?.(message.imageUrl);
+      } else if (message.type === "character_portrait") {
+        characterPortraits.set(message.charId, message.imageUrl);
+        // Track expressions for re-apply after renderer reset.
+        if (message.expressions) {
+          characterExpressions.set(message.charId, message.expressions);
+        } else {
+          characterExpressions.delete(message.charId);
+        }
+        chatRenderer?.setCharacterPortrait?.(message.charId, message.imageUrl, null, message.expressions);
+        renderer?.setCharacterPortrait?.(message.charId, message.imageUrl, null, message.expressions);
+        // Don't add character portrait to chat panel (handled visually on stage)
+      } else if (message.type === "character_expression_update") {
+        // Hot-add expression variant — arrives during the first beats of the play.
+        chatRenderer?.addExpressionVariant?.(message.charId, message.expressionKey, message.imageUrl);
+        renderer?.addExpressionVariant?.(message.charId, message.expressionKey, message.imageUrl);
+        // Also update cached expressions map for re-apply after reset.
+        const existing = characterExpressions.get(message.charId) ?? { neutral: characterPortraits.get(message.charId) ?? "" };
+        characterExpressions.set(message.charId, { ...existing, [message.expressionKey]: message.imageUrl });
+        // Don't send to chat panel
+      } else if (message.type === "text" && isPlayActive) {
+        // During play: route narration/dialogue to stage caption overlay + browser TTS.
+        const text = message.content;
+        const isNarration = text.startsWith("*") && text.endsWith("*");
+        const isDialogue = text.startsWith('"') && text.endsWith('"');
+
+        if (isNarration) {
+          const clean = text.replace(/^\*|\*$/g, "");
+          chatRenderer?.setCaption?.(clean, "Narrator");
+          speakText(clean, false);
+        } else if (isDialogue) {
+          const clean = text.replace(/^"|"$/g, "");
+          chatRenderer?.setCaption?.(clean, "");
+          speakText(clean, true);
+        }
+        // Still send to chat panel for the transcript.
+        panel.handleMessage(message);
+      } else if (message.type === "play_frame") {
+        // play_frame is a per-beat sync marker — do NOT cancel TTS here.
+        // TTS is cancelled naturally: speakText() cancels the prior utterance before the next,
+        // and the post-play text message ("The curtain falls...") clears isPlayActive + cancels.
+        panel.handleMessage(message);
+      } else if (message.type === "mood_change") {
+        chatRenderer?.setMood?.(message.mood);
+        renderer?.setMood?.(message.mood);
       } else {
+        // Non-play text messages: clear caption and reset play state.
+        if (message.type === "text") {
+          isPlayActive = false;
+          chatRenderer?.setCaption?.(null, null);
+          window.speechSynthesis?.cancel?.();
+          stopTtsKeepAlive();
+          const timelineEl = document.getElementById("timeline-output");
+          if (timelineEl) timelineEl.textContent = "Stage ready. Start a conversation to begin.";
+        }
         panel.handleMessage(message);
       }
     },
-    onSessionStart: (sessionId) => {
-      panel.setStatus(`Session: ${sessionId.slice(0, 8)}…`);
+    onSessionStart: (_sessionId) => {
+      // Session started — no user-visible status update needed.
     },
     onConnected: () => {
       setConnectionStatus("connected");
@@ -109,6 +244,23 @@ if (chatMessagesEl) {
     sendUserMessage(chatClient, content);
     if (chatInput) chatInput.value = "";
   });
+
+  // Wire microphone button with Web Speech API.
+  const micButton = document.getElementById("btn-mic");
+  if (micButton) {
+    createVoiceInput({
+      micButton,
+      lang: "en-IN",
+      onResult: (transcript) => {
+        if (!chatClient || !chatInput) return;
+        chatInput.value = transcript;
+        // Auto-submit the transcribed text.
+        panel.renderUserMessage(transcript);
+        sendUserMessage(chatClient, transcript);
+        chatInput.value = "";
+      }
+    });
+  }
 }
 
 // Stage panel controls (chat mode)

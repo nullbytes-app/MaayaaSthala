@@ -26,6 +26,7 @@ import {
 } from "./cinematicEffects.js";
 import { detectPuppetRole, createStageLook, createPuppetPalette } from "./puppetVisuals.js";
 import { createSceneTransition } from "./sceneTransition.js";
+import { createMoodEngine } from "./moodEngine.js";
 
 // Stage position zones for ENTER/MOVE/EXIT opcodes.
 const STAGE_ZONES = {
@@ -227,6 +228,7 @@ export const createStageRenderer = (canvas) => {
   const particles = createParticleSystem();
   const screenEffects = canvas ? createScreenEffects(canvas.width, canvas.height) : null;
   const spotlight = createSpotlight();
+  const moodEngine = createMoodEngine();
 
   const state = {
     beat: 0,
@@ -273,6 +275,15 @@ export const createStageRenderer = (canvas) => {
     if (!ctx || !canvas) return;
 
     drawBackdrop(ctx, canvas, state);
+
+    // Apply mood engine preset to cinematic subsystems.
+    const moodPreset = moodEngine.getPreset();
+    if (moodPreset.lighting.type) {
+      screenEffects?.setEffect(moodPreset.lighting.type, moodPreset.lighting.intensity);
+    }
+    if (moodPreset.camera.shakeIntensity > 0) {
+      camera?.shake(moodPreset.camera.shakeIntensity * 0.1); // small shake nudge per frame
+    }
 
     // Apply camera transform before drawing characters.
     camera?.applyTransform(ctx);
@@ -347,6 +358,7 @@ export const createStageRenderer = (canvas) => {
     camera?.update(dt);
     particles.update(dt);
     screenEffects?.update(dt);
+    moodEngine.update(dt);
 
     // Update expression crossfades.
     for (const exprState of state.expressionStates.values()) {
@@ -519,6 +531,10 @@ export const createStageRenderer = (canvas) => {
         artifact.direction = dx > 0 ? 1 : -1;
       }
     }
+
+    if (opcode === "MOOD") {
+      moodEngine.setMood(payload.mood || "neutral");
+    }
   };
 
   // ─── State Reset ──────────────────────────────────────────────────────────
@@ -530,6 +546,7 @@ export const createStageRenderer = (canvas) => {
     particles.reset();
     screenEffects?.reset();
     spotlight.reset();
+    moodEngine.reset();
     drawStage();
   };
 
@@ -744,6 +761,10 @@ export const createStageRenderer = (canvas) => {
       stop();
       applyFrame(frame);
       startAnimation();
+    },
+
+    setMood(mood) {
+      moodEngine.setMood(mood);
     }
   };
 };
