@@ -382,15 +382,14 @@ export const fitPortraitToSlot = (imgW, imgH, slotW, slotH) => {
   if (!imgW || !imgH) return { drawW: slotW, drawH: slotH, offsetX: 0, offsetY: 0 };
 
   const imgAspect = imgW / imgH;
-  // Height-fill: always fill slotH so characters are never tiny.
-  // AI portraits are typically 1024×1024 (aspect=1.0) which is wider than
-  // the slot aspect (180/340=0.53), so contain-fit would shrink to width=180,
-  // height=180 — a tiny square. Height-fill gives height=340, width=340.
-  // Cap drawW at 70% of slotH: for 1:1 images this limits to ~238px so two
-  // characters at center_left/center_right (gap=320px) have clear separation
-  // even after depthScale multiplier is applied.
-  const drawH = slotH;
+  // Width-first fit: cap drawW at 70% of slotH (preserves separation between
+  // two characters at center_left/center_right), then derive drawH from drawW
+  // to preserve the image's native aspect ratio.
+  // Previously drawH was always slotH, which stretched square (1:1) portraits
+  // 43% taller than wide. Now: for 1:1 → drawW=238, drawH=238; for 0.75
+  // portrait → drawW=238, drawH=317 (correctly tall but not distorted).
   const drawW = Math.min(slotH * imgAspect, slotH * 0.70);
+  const drawH = drawW / imgAspect;   // preserve aspect ratio — was always slotH before
 
   return {
     drawW,
