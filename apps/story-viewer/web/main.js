@@ -18,6 +18,7 @@ import { createLiveAdapter } from "./liveAdapter.js";
 import { createChatClient, sendUserMessage, sendApprovalResponse } from "./chatClient.js";
 import { createChatPanel } from "./chatPanel.js";
 import { createVoiceInput } from "./voiceInput.js";
+import { createAudioSync } from "./audioSync.js";
 
 // ===== Tab switching =====
 const tabChat = document.getElementById("tab-chat");
@@ -50,6 +51,11 @@ const chatCanvas = document.getElementById("stage-canvas");
 const chatRenderer = chatCanvas ? createStageRenderer(chatCanvas) : null;
 const chatLiveAdapter = createLiveAdapter();
 
+// ===== Audio-Visual Sync =====
+// Connects TTS audio elements to a Web Audio AnalyserNode so character
+// animation intensity can be driven by real-time vocal amplitude.
+const audioSync = createAudioSync();
+
 const setConnectionStatus = (state) => {
   const dot = statusDot;
   const label = statusLabel;
@@ -79,6 +85,15 @@ if (chatMessagesEl) {
       if (chatClient) {
         sendApprovalResponse(chatClient, requestId, choice);
       }
+    },
+    // Wire TTS audio elements to the AnalyserNode for animation amplitude driving.
+    // Reason: chatPanel creates the <audio> element internally; we expose it here
+    // via callback rather than duplicating audio creation logic in main.js.
+    onAudioPlay: (audioEl, speakerCharId) => {
+      audioSync.connectAudio(audioEl, speakerCharId);
+    },
+    onAudioEnded: () => {
+      audioSync.disconnect();
     },
     onPlayStart: (storyTitle) => {
       chatRenderer?.reset();
@@ -261,6 +276,18 @@ if (chatMessagesEl) {
       }
     });
   }
+
+  // ===== Audio-Visual Sync update loop =====
+  // Run a lightweight rAF loop that samples the AnalyserNode each frame.
+  // Kept separate from the stageRenderer's loop so audioSync has no coupling
+  // to renderer internals; getSpeakState() can be polled by any consumer.
+  // Reason: audioSync.update() is cheap — one getByteFrequencyData call plus
+  // an 18-element typed array reduce — well within per-frame budget at 60 fps.
+  const runAudioSyncLoop = () => {
+    audioSync.update();
+    requestAnimationFrame(runAudioSyncLoop);
+  };
+  requestAnimationFrame(runAudioSyncLoop);
 }
 
 // Stage panel controls (chat mode)

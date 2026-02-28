@@ -14,6 +14,12 @@
  *   Called when the user clicks an approval card button.
  * @param {(storyTitle: string) => void} [options.onPlayStart]
  *   Called when a play_start message is received.
+ * @param {(audioElement: HTMLAudioElement, speakerCharId: string) => void} [options.onAudioPlay]
+ *   Called when a new TTS audio element is created and begins playing.
+ *   Provides the raw HTMLAudioElement and the speaker character ID so callers
+ *   can connect it to an AnalyserNode for audio-visual sync.
+ * @param {() => void} [options.onAudioEnded]
+ *   Called when the current audio element finishes playing or is replaced.
  * @returns {{ handleMessage: (message: object) => void, clear: () => void, setStatus: (text: string) => void }}
  */
 /**
@@ -30,7 +36,13 @@ const sanitize = (text) =>
     .replace(/'/g, "&#x27;");
 
 export const createChatPanel = (container, options) => {
-  const { onApprovalChoice, onPlayStart } = options;
+  const { onApprovalChoice, onPlayStart, onInputEnabled, onAudioPlay, onAudioEnded } = options;
+
+  /** Track the current thinking bubble so we can remove it when done. */
+  let thinkingBubble = null;
+
+  /** Track the current audio element — only one plays at a time. */
+  let currentAudioEl = null;
 
   /** Scroll the container to the bottom after adding content. */
   const scrollToBottom = () => {
@@ -87,29 +99,87 @@ export const createChatPanel = (container, options) => {
     appendBubble(bubble);
   };
 
-  /** Render an inline audio player. */
-  const renderAudio = (url, durationMs, beatNumber) => {
-    if (!url) return; // No audio URL = TTS unavailable, skip silently.
+  /**
+   * Render thinking indicator with animated dots.
+   * If stage is empty string, removes the current thinking bubble.
+   */
+  const renderThinking = (stage) => {
+    // Remove any existing thinking bubble.
+    if (thinkingBubble) {
+      thinkingBubble.remove();
+      thinkingBubble = null;
+    }
+
+    if (!stage) {
+      // Empty stage = clear — disable the thinking state.
+      onInputEnabled?.(true);
+      return;
+    }
+
+    onInputEnabled?.(false);
 
     const bubble = createBubble("agent");
-    const wrapper = document.createElement("div");
-    wrapper.className = "chat-audio";
+    bubble.className += " chat-thinking";
 
-    const label = document.createElement("span");
-    label.className = "chat-audio__label";
-    label.textContent = beatNumber !== undefined ? `🔊 Narration (beat ${beatNumber})` : "🔊 Narration";
+    const dotsEl = document.createElement("span");
+    dotsEl.className = "chat-thinking__dots";
+    dotsEl.innerHTML = "<span></span><span></span><span></span>";
 
+    const labelEl = document.createElement("span");
+    labelEl.className = "chat-thinking__label";
+    labelEl.textContent = stage;
+
+    bubble.appendChild(dotsEl);
+    bubble.appendChild(labelEl);
+    appendBubble(bubble);
+    thinkingBubble = bubble;
+  };
+
+  /**
+   * Render an inline audio player. Only one audio plays at a time.
+   *
+   * @param {string} url - Audio source URL (TTS output).
+   * @param {number} [durationMs] - Expected duration in milliseconds (informational).
+   * @param {number} [beatNumber] - Play beat number this audio belongs to.
+   * @param {string} [speaker] - Character ID of the speaker, forwarded to onAudioPlay.
+   */
+  const renderAudio = (url, durationMs, beatNumber, speaker) => {
+    if (!url) return; // No audio URL = TTS unavailable, skip silently.
+
+    // Stop and remove previous audio to prevent overlap.
+    // Notify sync module that the previous speaker has ended before replacing.
+    if (currentAudioEl) {
+      currentAudioEl.pause();
+      currentAudioEl.src = "";
+      currentAudioEl.remove();
+      currentAudioEl = null;
+      onAudioEnded?.();
+    }
+
+    // Play audio invisibly — no UI clutter during play.
     const audio = document.createElement("audio");
     audio.src = url;
-    audio.controls = true;
     audio.preload = "auto";
-    // Auto-play narration audio for immersive experience.
     audio.autoplay = true;
+    audio.style.display = "none";
+    document.body.appendChild(audio);
+    currentAudioEl = audio;
 
-    wrapper.appendChild(label);
-    wrapper.appendChild(audio);
-    bubble.appendChild(wrapper);
-    appendBubble(bubble);
+    // Notify the audio-visual sync module so it can connect the AnalyserNode.
+    // Reason: we fire onAudioPlay immediately (before canplay/play events) so
+    // the AudioContext is wired up before any audio data flows through, ensuring
+    // the first frames of speech are captured. createMediaElementSource does not
+    // require the audio to be buffered — just the element to exist.
+    onAudioPlay?.(audio, speaker || "unknown");
+
+    // Clean up when done.
+    audio.addEventListener("ended", () => {
+      if (currentAudioEl === audio) {
+        currentAudioEl = null;
+      }
+      audio.remove();
+      onAudioEnded?.();
+    });
   };
 
   /** Render an approval request as a card with clickable choices. */
@@ -228,7 +298,7 @@ export const createChatPanel = (container, options) => {
         break;
 
       case "audio":
-        renderAudio(message.url, message.duration, message.beatNumber);
+        renderAudio(message.url, message.duration, message.beatNumber, message.speaker);
         break;
 
       case "video":
@@ -241,6 +311,18 @@ export const createChatPanel = (container, options) => {
 
       case "play_start":
         renderPlayStart(message.sceneId, message.storyTitle);
+        break;
+
+      case "thinking":
+        renderThinking(message.stage);
+        break;
+
+      case "scene_backdrop":
+        // scene_backdrop events are consumed by the canvas renderer in main.js.
+        break;
+
+      case "character_portrait":
+        // character_portrait events are consumed by the canvas renderer in main.js.
         break;
 
       case "play_frame":
@@ -278,5 +360,10 @@ export const createChatPanel = (container, options) => {
     statusEl.textContent = text;
   };
 
-  return { handleMessage, renderUserMessage, clear, setStatus };
+  /** Enable or disable the chat input form. */
+  const setInputEnabled = (enabled) => {
+    onInputEnabled?.(enabled);
+  };
+
+  return { handleMessage, renderUserMessage, clear, setStatus, setInputEnabled };
 };
