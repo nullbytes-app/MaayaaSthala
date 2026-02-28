@@ -16,8 +16,10 @@ import {
   setTargetExpression,
   drawCharacter,
   resolveExpression,
-  updateCrossfade
+  updateCrossfade,
+  triggerGesture
 } from "./expressionEngine.js";
+import { drawPropSVG } from "./propSprites.js";
 import {
   createCamera,
   createParticleSystem,
@@ -224,6 +226,8 @@ export const createStageRenderer = (canvas) => {
   const ctx = canvas?.getContext("2d");
   const transition = canvas && ctx ? createSceneTransition(canvas, ctx) : null;
 
+  const PHYSICAL_GESTURES = new Set(["pick_up", "throw", "drink"]);
+
   // Cinematic subsystems.
   const camera = canvas ? createCamera(canvas.width, canvas.height) : null;
   const particles = createParticleSystem();
@@ -297,8 +301,9 @@ export const createStageRenderer = (canvas) => {
     camera?.applyTransform(ctx);
 
     for (const [artifactId, artifact] of Object.entries(state.artifacts)) {
-      // Skip director pseudo-artifact.
+      // Skip director pseudo-artifact and prop artifacts (props rendered separately below).
       if (artifactId === "director") continue;
+      if (artifact.isProp) continue;
 
       const charId = artifact.charId || artifactId;
       const exprState = getExprState(charId);
@@ -340,6 +345,13 @@ export const createStageRenderer = (canvas) => {
         charAlpha,
         isMoving  // walk cycle physics
       );
+    }
+
+    // Draw static props (pots, stone piles, etc.) — behind speech bubbles, above backdrop.
+    for (const [, artifact] of Object.entries(state.artifacts)) {
+      if (!artifact.isProp || artifact.visible === false) continue;
+      const propDepthScale = 0.78 + clamp((artifact.y - 200) / 200, 0, 1) * 0.32;
+      drawPropSVG(ctx, artifact.propType, artifact.x, artifact.y, propDepthScale * 0.7);
     }
 
     // Speech bubbles drawn inside camera transform so they shake/zoom with the scene.
@@ -493,6 +505,13 @@ export const createStageRenderer = (canvas) => {
       }
     }
 
+    // Physical gesture overlay: trigger one-shot arm animation on character.
+    if (opcode === "GESTURE" && PHYSICAL_GESTURES.has(
+      typeof payload.gesture === "string" ? payload.gesture : ""
+    )) {
+      triggerGesture(exprState, payload.gesture);
+    }
+
     // Lerp speed overrides.
     artifact.lerpSpeed = opcode === "BARGE_IN" ? 8.0
       : opcode === "ENTER" || opcode === "EXIT" ? 2.5
@@ -561,6 +580,18 @@ export const createStageRenderer = (canvas) => {
 
     if (opcode === "MOOD") {
       moodEngine.setMood(payload.mood || "neutral");
+    }
+
+    if (opcode === "PROP") {
+      artifact.isProp = true;
+      artifact.propType = typeof payload.propType === "string" ? payload.propType : "generic";
+      artifact.visible = payload.visible !== false; // default visible; visible=false removes it
+      const atZone = typeof payload.at === "string" ? payload.at : "center";
+      artifact.targetX = STAGE_ZONES[atZone] ?? STAGE_ZONES.center;
+      artifact.x = artifact.x || artifact.targetX; // snap on first placement
+      artifact.targetY = typeof payload.y === "number" ? payload.y : 400;
+      artifact.y = artifact.y || artifact.targetY;
+      return; // props skip expression/particle/speaking logic
     }
   };
 
@@ -804,6 +835,15 @@ export const createStageRenderer = (canvas) => {
      */
     setSpeechBubble(charId, text, emotion) {
       speechBubbles.setSpeechBubble(charId, text, emotion);
+    },
+
+    /**
+     * Clear the speech bubble for a character (e.g. when TTS finishes speaking).
+     *
+     * @param {string} charId - Character identifier.
+     */
+    clearSpeechBubble(charId) {
+      speechBubbles.clearSpeechBubble(charId);
     }
   };
 };
