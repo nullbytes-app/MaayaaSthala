@@ -256,6 +256,9 @@ export function createSpeechBubbleSystem() {
       textProgress: 0,     // typewriter 0..1
       popping: false,       // true when dismissing
       textLength: text.length,
+      // Text line cache — avoids re-running measureText every frame when text is unchanged
+      cachedLines: null,
+      cachedText: null,
       // Cache: offscreen canvas for text (recreated when text changes)
       textCanvas: null,
       textCacheKey: null,
@@ -346,7 +349,12 @@ export function createSpeechBubbleSystem() {
       const rawText = fontStyle.textTransform === "upper" ? b.text.toUpperCase() : b.text;
       const visibleText = rawText.slice(0, Math.ceil(rawText.length * b.textProgress));
 
-      const lines = wrapText(ctx, rawText, MAX_BUBBLE_W - 20);
+      // Cache sizing lines to avoid re-running measureText every frame when text is unchanged.
+      if (b.cachedText !== rawText) {
+        b.cachedLines = wrapText(ctx, rawText, MAX_BUBBLE_W - 20);
+        b.cachedText = rawText;
+      }
+      const lines = b.cachedLines;
       const lineHeight = parseInt(ctx.font) + 4;
       const textW = Math.min(MAX_BUBBLE_W, Math.max(...lines.map(l => ctx.measureText(l).width)) + 24);
       const textH = lines.length * lineHeight + 20;

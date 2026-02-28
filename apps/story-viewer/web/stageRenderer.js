@@ -15,7 +15,8 @@ import {
   addExpression,
   setTargetExpression,
   drawCharacter,
-  resolveExpression
+  resolveExpression,
+  updateCrossfade
 } from "./expressionEngine.js";
 import {
   createCamera,
@@ -349,15 +350,7 @@ export const createStageRenderer = (canvas) => {
 
     // Update expression crossfades.
     for (const exprState of state.expressionStates.values()) {
-      // Import updateCrossfade inline to avoid circular dependency.
-      if (exprState.crossfadeProgress < 1.0) {
-        const step = dt * 1000 / exprState.crossfadeDurationMs;
-        exprState.crossfadeProgress = Math.min(1.0, exprState.crossfadeProgress + step);
-        if (exprState.crossfadeProgress >= 1.0) {
-          exprState.currentKey = exprState.targetKey;
-          exprState.crossfadeProgress = 1.0;
-        }
-      }
+      updateCrossfade(exprState, dt);
     }
 
     drawStage();
