@@ -7,10 +7,71 @@
  * - Returns a data URI or Cloud Storage URL for the audio
  */
 
+/**
+ * Available Neural2 voices for each language, used by the AI voice casting system.
+ * Each voice has a gender and quality descriptor to help the AI assign appropriate voices.
+ */
+export const DEFAULT_VOICE_PALETTE = {
+  "en-IN": [
+    { id: "en-IN-Neural2-A", gender: "female", quality: "warm" },
+    { id: "en-IN-Neural2-B", gender: "female", quality: "soft" },
+    { id: "en-IN-Neural2-C", gender: "male", quality: "deep" },
+    { id: "en-IN-Neural2-D", gender: "male", quality: "bright" },
+  ],
+  "hi-IN": [
+    { id: "hi-IN-Neural2-A", gender: "female", quality: "warm" },
+    { id: "hi-IN-Neural2-B", gender: "female", quality: "soft" },
+    { id: "hi-IN-Neural2-C", gender: "male", quality: "deep" },
+    { id: "hi-IN-Neural2-D", gender: "male", quality: "bright" },
+  ],
+} as const;
+
+/** A single character's voice assignment in an AI-generated casting map. */
+export interface VoiceCastEntry {
+  voice: string;
+  rate: number;
+  pitch: number;
+}
+
+/** AI-generated voice casting map: character name (or "narrator") → voice config. */
+export type VoiceCasting = Record<string, VoiceCastEntry>;
+
+/**
+ * Resolve TTS voice configuration for a speaker from an AI-generated casting map.
+ *
+ * The casting map is produced by the conversation agent at story start.
+ * Falls back to sensible defaults if the speaker is not in the casting map.
+ *
+ * @param speaker - Character name or "narrator".
+ * @param casting - AI-generated voice casting map.
+ * @returns Voice name, speaking rate, and pitch for Google Cloud TTS.
+ */
+export function resolveVoiceConfig(
+  speaker: string,
+  casting: VoiceCasting
+): { voiceName: string; speakingRate: number; pitch: number } {
+  const entry = casting[speaker];
+  if (entry) {
+    return { voiceName: entry.voice, speakingRate: entry.rate, pitch: entry.pitch };
+  }
+  // Reason: unknown speakers fall back to role-based defaults so the experience
+  // degrades gracefully rather than erroring when casting is incomplete.
+  if (speaker === "narrator") {
+    return { voiceName: "en-IN-Neural2-A", speakingRate: 0.85, pitch: -1.0 };
+  }
+  return { voiceName: "en-IN-Neural2-D", speakingRate: 1.0, pitch: 0.0 };
+}
+
 type NarrationOptions = {
   gcpProject?: string;
   languageCode?: "en-IN" | "hi-IN";
   voiceName?: string;
+  /** Voice type: "narrator" uses a deeper storyteller voice, "character" uses a lighter dialogue voice. */
+  voiceType?: "narrator" | "character";
+  /** Character name for per-character voice lookup in voiceCasting map. */
+  speaker?: string;
+  /** AI-generated voice casting map assigning voices to characters. */
+  voiceCasting?: VoiceCasting;
 };
 
 type NarrationResult = {
@@ -94,23 +155,46 @@ const callGoogleCloudTts = async (
   const client = new TextToSpeechClient();
 
   const languageCode = options.languageCode ?? "en-IN";
-  // Neural2 voices give the best quality; fallback to Wavenet if unavailable.
-  const voiceName =
-    options.voiceName ??
-    (languageCode === "hi-IN" ? "hi-IN-Neural2-A" : "en-IN-Neural2-A");
 
-  const [response] = await client.synthesizeSpeech({
-    input: { text },
-    voice: {
-      languageCode,
-      name: voiceName
-    },
-    audioConfig: {
-      audioEncoding: "MP3",
-      speakingRate: 0.9, // Slightly slower for storytelling warmth
-      pitch: -1.0 // Slightly deeper for narrator voice
-    }
-  });
+  // Use per-character voice casting if provided, otherwise fall back to voiceType heuristic.
+  let voiceName: string;
+  let speakingRate: number;
+  let pitch: number;
+
+  if (options.speaker && options.voiceCasting) {
+    // Reason: per-character casting takes precedence over generic voiceType so that
+    // each character has a distinct, AI-assigned voice rather than a shared default.
+    const resolved = resolveVoiceConfig(options.speaker, options.voiceCasting);
+    voiceName = resolved.voiceName;
+    speakingRate = resolved.speakingRate;
+    pitch = resolved.pitch;
+  } else {
+    // Legacy fallback: use voiceType heuristic (backwards compatible).
+    const isHindi = languageCode === "hi-IN";
+    const isCharacterVoice = options.voiceType === "character";
+    // Neural2 voices give the best quality; fallback to Wavenet if unavailable.
+    // Narrator: en-IN-Neural2-A (deeper, slower) | Character: en-IN-Neural2-D (lighter, normal)
+    voiceName = options.voiceName ??
+      (isHindi ? "hi-IN-Neural2-A" : isCharacterVoice ? "en-IN-Neural2-D" : "en-IN-Neural2-A");
+    speakingRate = isCharacterVoice ? 1.0 : 0.85; // Narrator slower for warmth
+    pitch = isCharacterVoice ? 0.0 : -1.0; // Narrator deeper
+  }
+
+  // Reason: GCP TTS can hang indefinitely when credentials are invalid or the project
+  // doesn't have TTS API enabled. A 10s timeout ensures the try/catch in narrateText
+  // sees the failure and falls back to "unavailable" rather than blocking the beat loop.
+  const synthesizeWithTimeout = (): Promise<ReturnType<typeof client.synthesizeSpeech>> =>
+    new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("TTS timeout after 10s")), 10_000);
+      client.synthesizeSpeech({
+        input: { text },
+        voice: { languageCode, name: voiceName },
+        audioConfig: { audioEncoding: "MP3", speakingRate, pitch }
+      }).then((result) => { clearTimeout(timer); resolve(result); })
+        .catch((err) => { clearTimeout(timer); reject(err); });
+    });
+
+  const [response] = await synthesizeWithTimeout();
 
   if (!response.audioContent) {
     throw new Error("Google Cloud TTS returned empty audio content");
