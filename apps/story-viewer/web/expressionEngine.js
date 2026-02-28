@@ -77,7 +77,9 @@ export const createExpressionState = (charId) => ({
   enterTime: null,
   enterDurationMs: 600,
   // Speaking state: enables micro-pulse animation
-  isSpeaking: false
+  isSpeaking: false,
+  // Emotion pop: 1.0 on expression change, decays to 0 over ~250ms
+  emotionPop: 0
 });
 
 /**
@@ -107,6 +109,8 @@ export const setTargetExpression = (state, key) => {
   if (resolvedKey === state.currentKey) return;
   state.targetKey = resolvedKey;
   state.crossfadeProgress = 0;
+  // Trigger emotion pop burst when expression actually changes.
+  state.emotionPop = 1.0;
 };
 
 /**
@@ -260,6 +264,17 @@ export const drawCharacter = (ctx, state, beat, dt, slotX, slotY, slotW, slotH, 
   ctx.rotate(idleSway);
 
   ctx.scale(totalScaleX, totalScaleY);
+
+  // Emotion pop — squash-stretch burst on expression change, decays over ~250ms.
+  // emotionPop starts at 1.0 and decays to 0 at rate dt*4 (~250ms total).
+  // easeOutBack maps the remaining 1→0 range so the scale overshoots then settles.
+  if (state.emotionPop > 0) {
+    const popProgress = easeOutBack(1.0 - state.emotionPop);
+    const popScaleY = 1.0 + popProgress * 0.08; // peak: 8% taller
+    const popScaleX = 1.0 / popScaleY;           // conservation of volume
+    ctx.scale(popScaleX, popScaleY);
+    state.emotionPop = Math.max(0, state.emotionPop - dt * 4); // decay over 250ms
+  }
 
   // Draw current expression.
   const drawW = fit.drawW;
