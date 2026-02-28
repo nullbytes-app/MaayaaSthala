@@ -508,7 +508,7 @@ export const createStageRenderer = (canvas) => {
       const { role, text } = payload;
       if (role && role !== "narrator") {
         const currentMood = moodEngine.getCurrentMood?.() || "normal";
-        speechBubbles.setSpeechBubble(role, text || "", currentMood);
+        speechBubbles.setSpeechBubble(role, text || "", payload.emotion || currentMood);
       }
     }
 
