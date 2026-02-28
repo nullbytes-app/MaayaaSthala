@@ -27,6 +27,7 @@ import {
 import { detectPuppetRole, createStageLook, createPuppetPalette } from "./puppetVisuals.js";
 import { createSceneTransition } from "./sceneTransition.js";
 import { createMoodEngine } from "./moodEngine.js";
+import { createSpeechBubbleSystem } from "./speechBubble.js";
 
 // Stage position zones for ENTER/MOVE/EXIT opcodes.
 const STAGE_ZONES = {
@@ -229,6 +230,7 @@ export const createStageRenderer = (canvas) => {
   const screenEffects = canvas ? createScreenEffects(canvas.width, canvas.height) : null;
   const spotlight = createSpotlight();
   const moodEngine = createMoodEngine();
+  const speechBubbles = createSpeechBubbleSystem();
 
   const state = {
     beat: 0,
@@ -340,6 +342,9 @@ export const createStageRenderer = (canvas) => {
       );
     }
 
+    // Speech bubbles drawn inside camera transform so they shake/zoom with the scene.
+    speechBubbles.draw(ctx, state.artifacts, canvas);
+
     camera?.restoreTransform(ctx);
 
     // Particles and screen effects in screen space (outside camera transform).
@@ -365,6 +370,7 @@ export const createStageRenderer = (canvas) => {
     particles.update(dt);
     screenEffects?.update(dt);
     moodEngine.update(dt);
+    speechBubbles.update(dt);
 
     // Update expression crossfades.
     for (const exprState of state.expressionStates.values()) {
@@ -498,6 +504,12 @@ export const createStageRenderer = (canvas) => {
 
     if (opcode === "SPEAK") {
       artifact.targetY = 381;
+      // Show speech bubble above this character (non-narrator roles only).
+      const { role, text } = payload;
+      if (role && role !== "narrator") {
+        const currentMood = moodEngine.getCurrentMood?.() || "normal";
+        speechBubbles.setSpeechBubble(role, text || "", currentMood);
+      }
     }
 
     if (opcode === "BARGE_IN") {
@@ -509,6 +521,7 @@ export const createStageRenderer = (canvas) => {
     if (opcode === "SCENE_CLOSE") {
       artifact.targetY = 403;
       artifact.isSpeaking = false;
+      speechBubbles.clearAll();
       transition?.curtainClose();
     }
 
@@ -527,6 +540,7 @@ export const createStageRenderer = (canvas) => {
       const to = payload.to === "right" ? "offscreen_right" : "offscreen_left";
       artifact.targetX = STAGE_ZONES[to] ?? -80;
       artifact.isSpeaking = false;
+      speechBubbles.clearSpeechBubble(charId);
     }
 
     if (opcode === "MOVE") {
@@ -580,6 +594,7 @@ export const createStageRenderer = (canvas) => {
         clearTimeout(state.captionTimer);
         state.captionTimer = null;
       }
+      speechBubbles.clearAll();
       resetState();
       // Show curtain fully closed before play starts — theatrical reveal when backdrop arrives.
       transition?.showCurtain();
@@ -771,6 +786,17 @@ export const createStageRenderer = (canvas) => {
 
     setMood(mood) {
       moodEngine.setMood(mood);
+    },
+
+    /**
+     * Directly show a speech bubble above a character (for external callers).
+     *
+     * @param {string} charId - Character identifier.
+     * @param {string} text - Text to display.
+     * @param {string} [emotion="neutral"] - Emotion key affecting bubble shape.
+     */
+    setSpeechBubble(charId, text, emotion) {
+      speechBubbles.setSpeechBubble(charId, text, emotion);
     }
   };
 };
