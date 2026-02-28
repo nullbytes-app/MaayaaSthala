@@ -62,6 +62,46 @@ export function resolveVoiceConfig(
   return { voiceName: "en-IN-Neural2-D", speakingRate: 1.0, pitch: 0.0 };
 }
 
+/**
+ * Build SSML markup for Google Cloud TTS with emotion-appropriate prosody.
+ *
+ * - Replaces "..." with dramatic pause breaks
+ * - Wraps text in prosody tags for emotion hints (whisper, shout, excited, sad, dramatic)
+ * - Neutral/undefined emotion: plain speak wrapper with no prosody modification
+ *
+ * @param text - Plain text to convert to SSML.
+ * @param emotionHint - Optional emotion key from bubble shape or story mood.
+ * @returns Valid SSML string ready for Google Cloud TTS `input.ssml` field.
+ */
+export function buildSSML(text: string, emotionHint?: string): string {
+  // Replace "..." with a dramatic pause break.
+  // Reason: ellipsis in narration signals a pause — SSML break makes it audible.
+  let inner = text.replace(/\.\.\./g, '<break time="400ms"/>');
+
+  switch (emotionHint) {
+    case "whisper":
+      inner = `<prosody volume="soft" rate="slow">${inner}</prosody>`;
+      break;
+    case "shout":
+      inner = `<prosody volume="loud" rate="fast" pitch="+2st">${inner}</prosody>`;
+      break;
+    case "excited":
+      inner = `<prosody rate="fast" pitch="+1st">${inner}</prosody>`;
+      break;
+    case "sad":
+      inner = `<prosody rate="slow" pitch="-1st">${inner}</prosody>`;
+      break;
+    case "dramatic":
+      inner = `<prosody rate="slow">${inner}</prosody>`;
+      break;
+    default:
+      // neutral or unknown — no prosody wrapping
+      break;
+  }
+
+  return `<speak>${inner}</speak>`;
+}
+
 type NarrationOptions = {
   gcpProject?: string;
   languageCode?: "en-IN" | "hi-IN";
@@ -72,6 +112,8 @@ type NarrationOptions = {
   speaker?: string;
   /** AI-generated voice casting map assigning voices to characters. */
   voiceCasting?: VoiceCasting;
+  /** Optional emotion hint for SSML prosody (whisper|shout|excited|sad|dramatic|neutral). */
+  emotionHint?: string;
 };
 
 type NarrationResult = {
@@ -187,7 +229,7 @@ const callGoogleCloudTts = async (
     new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("TTS timeout after 10s")), 10_000);
       client.synthesizeSpeech({
-        input: { text },
+        input: { ssml: buildSSML(text, options.emotionHint) },
         voice: { languageCode, name: voiceName },
         audioConfig: { audioEncoding: "MP3", speakingRate, pitch }
       }).then((result) => { clearTimeout(timer); resolve(result); })
