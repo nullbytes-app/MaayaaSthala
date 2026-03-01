@@ -151,6 +151,10 @@ const ROUTES: RouteDefinition[] = [
   {
     method: "GET",
     path: "/viewer/audioSync.js"
+  },
+  {
+    method: "GET",
+    path: "/viewer/propSprites.js"
   }
 ];
 
@@ -229,6 +233,10 @@ const VIEWER_ASSETS: Record<string, { filePath: string; contentType: string }> =
   },
   "/viewer/audioSync.js": {
     filePath: fileURLToPath(new URL("../../../apps/story-viewer/web/audioSync.js", import.meta.url)),
+    contentType: "text/javascript; charset=utf-8"
+  },
+  "/viewer/propSprites.js": {
+    filePath: fileURLToPath(new URL("../../../apps/story-viewer/web/propSprites.js", import.meta.url)),
     contentType: "text/javascript; charset=utf-8"
   }
 };
