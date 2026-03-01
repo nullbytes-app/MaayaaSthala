@@ -127,22 +127,35 @@ export const rangmanch: TheatreAgent<RangmanchInput, void> = {
         const isElderly = /\b(old|elder|ancient|grand|dadi|dada|nani|nana|aged|wise|wrinkled)\b/.test(tokens);
         const isElderFemale = isFemale && isElderly;
 
-        // Assign voice + prosody
-        if (isElderFemale) return { voice: "en-IN-Neural2-B", rate: 0.88, pitch: 1.5 };   // soft elderly female
-        if (isFemale)      return { voice: "en-IN-Neural2-A", rate: 1.0,  pitch: 2.0 };   // warm female
-        if (isVillain)     return { voice: "en-IN-Neural2-C", rate: 0.82, pitch: -4.0 };  // deep menacing
-        if (isChild)       return { voice: "en-IN-Neural2-D", rate: 1.08, pitch: 4.0 };   // bright quick child
-        if (isElderly)     return { voice: "en-IN-Neural2-C", rate: 0.88, pitch: -2.0 };  // deep elderly male
-        return               { voice: "en-IN-Neural2-D", rate: 1.0,  pitch: 0.0 };        // default male
+        // Assign Chirp3-HD voices — each role gets a distinct voice for differentiation.
+        // Reason: Chirp-HD-* voices fail with INVALID_ARGUMENT; Chirp3-HD-* voices work reliably.
+        if (isElderFemale) return { voice: "en-IN-Chirp3-HD-Kore", rate: 0.88, pitch: 1.5 };         // soft elderly female
+        if (isFemale)      return { voice: "en-IN-Chirp3-HD-Aoede", rate: 1.0,  pitch: 2.0 };        // warm female
+        if (isVillain)     return { voice: "en-IN-Chirp3-HD-Fenrir", rate: 0.82, pitch: -4.0 };      // deep menacing
+        if (isChild)       return { voice: "en-IN-Chirp3-HD-Puck", rate: 1.08, pitch: 4.0 };         // bright quick child
+        if (isElderly)     return { voice: "en-IN-Chirp3-HD-Enceladus", rate: 0.88, pitch: -2.0 };   // deep elderly male
+        return               { voice: "en-IN-Chirp3-HD-Charon", rate: 1.0,  pitch: 0.0 };            // default male
       };
 
       const voiceCasting: VoiceCasting = {
         // Narrator: deep storyteller voice — authoritative but measured
-        narrator: { voice: "en-IN-Neural2-C", rate: 0.85, pitch: -2.0 }
+        narrator: { voice: "en-IN-Chirp3-HD-Enceladus", rate: 0.85, pitch: -2.0 }
       };
       for (const charId of characters.keys()) {
         voiceCasting[charId] = castVoice(charId);
       }
+
+      // Emit full voice casting data to the browser so it can assign distinct
+      // browser TTS voices per character with appropriate pitch/rate values.
+      // Includes gender hint for voice selection + prosody for differentiation.
+      const browserVoiceHints: Record<string, { gender: "female" | "male"; rate: number; pitch: number }> = {};
+      for (const [charId, v] of Object.entries(voiceCasting)) {
+        const isFemaleVoice = v.voice.includes("Aoede") || v.voice.includes("Kore") ||
+          v.voice.includes("Achernar") || v.voice.includes("Chirp-HD-F") || v.voice.includes("Chirp-HD-O") ||
+          v.voice === "en-IN-Neural2-A" || v.voice === "en-IN-Neural2-B";
+        browserVoiceHints[charId] = { gender: isFemaleVoice ? "female" : "male", rate: v.rate, pitch: v.pitch };
+      }
+      onMessage({ type: "voice_casting", casting: browserVoiceHints });
 
       await compileAndRunPlay(
         { story, approvedCharacters: characters },

@@ -61,10 +61,13 @@ export const generateCharacter = async (
     previewUrl: result.previewUrl,
     hasParts: result.hasParts,
     ...(typedParts ? { parts: typedParts } : {}),
+    // Propagate expressions from generation result when available.
+    ...(result.expressions ? { expressions: result.expressions } : {}),
     source:
       result.source === "stitch_mcp" ? "stitch"
       : result.source === "stitch_stub" ? "stub"
       : result.source === "vertex_ai" ? "vertex_ai"
+      : result.source === "gemini" ? "gemini"
       : "svg"
   };
 

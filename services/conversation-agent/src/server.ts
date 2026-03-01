@@ -10,6 +10,7 @@ type ChatServerConfig = {
   gcpProject?: string;
   gcpLocation?: string;
   stitchMcpAvailable?: boolean;
+  apiKey?: string;
 };
 
 /**
@@ -81,7 +82,8 @@ const sendToClient = (socket: WebSocket, message: ChatOutboundMessage): void => 
 export const attachChatWebSocketServer = (
   httpServer: HttpServer,
   runner: InMemoryRunner | undefined,
-  config: ChatServerConfig = {}
+  config: ChatServerConfig = {},
+  jsonRunner?: InMemoryRunner
 ): (() => void) => {
   const wss = new WebSocketServer({ noServer: true });
 
@@ -160,6 +162,8 @@ export const attachChatWebSocketServer = (
       }
 
       // Process user_message through the conversation agent.
+      // Serialize per session: chain each turn onto session.activeTurn so concurrent
+      // WebSocket messages execute sequentially and don't corrupt approval state.
       if (message.type === "user_message") {
         const onMessage = (agentMessage: AgentStreamMessage): void => {
           sendToClient(socket, {
@@ -168,32 +172,59 @@ export const attachChatWebSocketServer = (
           });
         };
 
-        try {
-          if (runner) {
-            await handleConversationTurn(
-              message.content,
-              session,
-              runner,
-              onMessage,
-              {
-                gcpProject: config.gcpProject,
-                gcpLocation: config.gcpLocation,
-                stitchMcpAvailable: config.stitchMcpAvailable
-              }
-            );
-          } else {
-            // No runner configured — echo back with guidance.
-            onMessage({
-              type: "text",
-              content:
-                "Story AI is running without an AI model. " +
-                "Set GEMINI_API_KEY or configure Vertex AI to enable storytelling."
-            });
+        const content = message.content;
+
+        // Preemption: if the user sends a new message while approvals are pending,
+        // cancel those approvals synchronously now — before chaining onto the queue.
+        // Reason: approval_response bypasses the queue (handled immediately above),
+        // but user_message is queued. Without this, a story-interrupt user_message
+        // can never unblock a turn that is blocked on addPendingApproval.
+        // We cancel eagerly on any user_message with pending approvals, because:
+        // (a) approval choices are sent via approval_response, not user_message, so
+        //     a user_message while an approval is pending almost always means the user
+        //     is trying to move on, and (b) the queued turn will re-evaluate intent.
+        if (session.pendingApprovals.size > 0) {
+          for (const approval of session.pendingApprovals.values()) {
+            approval.reject("Interrupted by new user message");
           }
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          onMessage({ type: "error", message: `Agent error: ${errorMessage}` });
+          session.pendingApprovals.clear();
         }
+
+        session.activeTurn = session.activeTurn
+          .catch(() => { /* swallow errors from previous turn so chain continues */ })
+          .then(async () => {
+            try {
+              if (runner) {
+                await handleConversationTurn(
+                  content,
+                  session,
+                  runner,
+                  onMessage,
+                  {
+                    gcpProject: config.gcpProject,
+                    gcpLocation: config.gcpLocation,
+                    stitchMcpAvailable: config.stitchMcpAvailable,
+                    apiKey: config.apiKey
+                  },
+                  jsonRunner
+                );
+              } else {
+                // No runner configured — echo back with guidance.
+                onMessage({
+                  type: "text",
+                  content:
+                    "Story AI is running without an AI model. " +
+                    "Set GEMINI_API_KEY or configure Vertex AI to enable storytelling."
+                });
+              }
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              // Silently discard expected interruption — user already sent a new message
+              // that cancelled this turn's pending approval. No user-visible error needed.
+              if (errorMessage === "Interrupted by new user message") return;
+              onMessage({ type: "error", message: `Agent error: ${errorMessage}` });
+            }
+          });
       }
     });
 

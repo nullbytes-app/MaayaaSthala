@@ -155,6 +155,10 @@ const ROUTES: RouteDefinition[] = [
   {
     method: "GET",
     path: "/viewer/propSprites.js"
+  },
+  {
+    method: "GET",
+    path: "/viewer/favicon.svg"
   }
 ];
 
@@ -238,6 +242,10 @@ const VIEWER_ASSETS: Record<string, { filePath: string; contentType: string }> =
   "/viewer/propSprites.js": {
     filePath: fileURLToPath(new URL("../../../apps/story-viewer/web/propSprites.js", import.meta.url)),
     contentType: "text/javascript; charset=utf-8"
+  },
+  "/viewer/favicon.svg": {
+    filePath: fileURLToPath(new URL("../../../apps/story-viewer/web/favicon.svg", import.meta.url)),
+    contentType: "image/svg+xml"
   }
 };
 

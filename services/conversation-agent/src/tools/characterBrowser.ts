@@ -22,6 +22,7 @@ type BrowseResult = {
 
 /** Built-in character library — extend with pre-generated Stitch MCP assets. */
 const BUNDLED_LIBRARY: CharacterAsset[] = [
+  // Human characters — suited for epics (Ramayana, Mahabharata, Vikram-Betaal, Tenali Raman)
   {
     assetId: "lib_hero_prince_001",
     name: "Prince Arjun",
@@ -86,6 +87,23 @@ const BUNDLED_LIBRARY: CharacterAsset[] = [
     hasParts: true,
     source: "library"
   },
+  // Animal characters — suited for Panchatantra and Jataka fables
+  {
+    assetId: "lib_hero_crow_001",
+    name: "Faithful Crow",
+    archetype: "hero",
+    previewUrl: "/generated/lib_hero_crow_001.png",
+    hasParts: true,
+    source: "library"
+  },
+  {
+    assetId: "lib_trickster_fox_001",
+    name: "Cunning Fox",
+    archetype: "trickster",
+    previewUrl: "/generated/lib_trickster_fox_001.png",
+    hasParts: true,
+    source: "library"
+  },
   {
     assetId: "lib_trickster_jackal_001",
     name: "Clever Jackal",
@@ -95,10 +113,34 @@ const BUNDLED_LIBRARY: CharacterAsset[] = [
     source: "library"
   },
   {
+    assetId: "lib_mentor_tortoise_001",
+    name: "Wise Tortoise",
+    archetype: "mentor",
+    previewUrl: "/generated/lib_mentor_tortoise_001.png",
+    hasParts: true,
+    source: "library"
+  },
+  {
     assetId: "lib_supporting_lion_001",
     name: "Mighty Lion",
     archetype: "supporting",
     previewUrl: "/generated/lib_supporting_lion_001.png",
+    hasParts: true,
+    source: "library"
+  },
+  {
+    assetId: "lib_villain_wolf_001",
+    name: "Greedy Wolf",
+    archetype: "villain",
+    previewUrl: "/generated/lib_villain_wolf_001.png",
+    hasParts: true,
+    source: "library"
+  },
+  {
+    assetId: "lib_supporting_monkey_001",
+    name: "Mischievous Monkey",
+    archetype: "supporting",
+    previewUrl: "/generated/lib_supporting_monkey_001.png",
     hasParts: true,
     source: "library"
   }
@@ -151,11 +193,41 @@ export const browseCharacters = (input: BrowseInput = {}): BrowseResult => {
 };
 
 /**
+ * Animal keywords commonly found in Indian folklore characters.
+ * Used to detect thematic compatibility between story chars and library chars.
+ */
+const ANIMAL_KEYWORDS = new Set([
+  "crow", "fox", "jackal", "monkey", "lion", "tiger", "elephant",
+  "rabbit", "hare", "tortoise", "turtle", "snake", "cobra", "deer",
+  "bear", "wolf", "bird", "fish", "frog", "owl", "eagle", "parrot",
+  "peacock", "dog", "cat", "horse", "bull", "goat", "sheep", "crane",
+  "duck", "crocodile", "alligator", "mongoose", "rat", "mouse", "donkey",
+  "camel", "swan", "stork", "pigeon", "dove", "hawk", "vulture", "bee"
+]);
+
+/**
+ * Returns true if the given name contains a recognizable animal keyword.
+ * Used to distinguish animal characters (Panchatantra) from human characters (epics).
+ */
+const containsAnimalName = (name: string): boolean => {
+  const lower = name.toLowerCase();
+  return [...ANIMAL_KEYWORDS].some((animal) => lower.includes(animal));
+};
+
+/**
  * Find characters matching a list of story character archetypes.
  * Used by the agent to show relevant library options for a generated story.
  *
+ * Matching strategy:
+ *   1. Filter library by archetype (required match).
+ *   2. If the story character is an animal, prefer library characters that are
+ *      also animals (same thematic category). If no animal match exists, return
+ *      undefined — the character should be generated rather than misrepresented
+ *      by a human character on stage.
+ *   3. If the story character is human, return the first archetype match.
+ *
  * @param characters - Story characters with archetype requirements.
- * @returns Map of charId → best matching library asset (or undefined).
+ * @returns Map of charId → best matching library asset (or undefined if no good match).
  */
 export const matchCharactersToLibrary = (
   characters: Array<{ charId: string; name: string; archetype: string }>
@@ -163,8 +235,18 @@ export const matchCharactersToLibrary = (
   const result = new Map<string, CharacterAsset | undefined>();
 
   for (const character of characters) {
+    const charIsAnimal = containsAnimalName(character.name);
     const matches = browseCharacters({ archetype: character.archetype });
-    result.set(character.charId, matches.found[0]);
+
+    if (charIsAnimal) {
+      // Prefer library characters that are also animals for thematic consistency.
+      // Reason: showing a human prince as a "crow" is misleading and breaks immersion.
+      const animalMatches = matches.found.filter((a) => containsAnimalName(a.name));
+      result.set(character.charId, animalMatches[0]); // undefined when no animal match
+    } else {
+      // Human characters: use the first archetype match.
+      result.set(character.charId, matches.found[0]);
+    }
   }
 
   return result;

@@ -13,7 +13,10 @@
 
 body {
   margin: 0;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   background: radial-gradient(circle at top, #fff7e7 0%, var(--bg) 45%, #efe3cb 100%);
   color: var(--ink);
   font-family: "Trebuchet MS", "Segoe UI", sans-serif;
@@ -76,6 +79,9 @@ textarea {
 #stage-canvas {
   width: 100%;
   height: auto;
+  flex: 1;
+  min-height: 0;
+  object-fit: contain;
   border-radius: 8px;
   border: 1px solid #d8c6a8;
   background: linear-gradient(180deg, #2f1a14 0%, #5c2f1d 50%, #29160f 100%);
@@ -154,6 +160,7 @@ pre {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .app-header__tabs {
@@ -180,13 +187,17 @@ pre {
 
 /* ===== Layout variants ===== */
 .layout--chat {
-  grid-template-columns: 400px 1fr;
+  grid-template-columns: 380px 1fr;
   grid-template-rows: 1fr;
-  height: calc(100vh - 100px);
+  flex: 1;
+  min-height: 0; /* critical: allows grid to shrink below content size */
+  padding-bottom: 14px;
 }
 
 .layout--studio {
   grid-template-columns: 360px 1fr 320px;
+  flex: 1;
+  min-height: 0;
 }
 
 .hidden {
@@ -197,7 +208,7 @@ pre {
 .panel--chat {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -434,11 +445,46 @@ pre {
   justify-content: center;
 }
 
+/* ===== Mic button ===== */
+.btn-mic {
+  border: 1px solid #9b6a50;
+  background: linear-gradient(180deg, #e9d4a8 0%, #d4b37a 100%);
+  color: #4a2c18;
+  border-radius: 50%;
+  width: 38px;
+  height: 38px;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.btn-mic:hover {
+  background: linear-gradient(180deg, #f5e0b0 0%, #e4c47a 100%);
+}
+
+.btn-mic--active {
+  background: linear-gradient(180deg, #e57373 0%, #c62828 100%);
+  border-color: #b71c1c;
+  color: #fff;
+  animation: mic-pulse 1s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(198, 40, 40, 0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(198, 40, 40, 0); }
+}
+
 /* ===== Stage panel (chat mode) ===== */
 .panel--stage {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -487,12 +533,76 @@ pre {
 }
 
 @media (max-width: 900px) {
+  body {
+    overflow: auto;
+    height: auto;
+    min-height: 100vh;
+  }
+
   .layout--chat {
     grid-template-columns: 1fr;
-    height: auto;
+    flex: none;
+    min-height: 0;
   }
 
   .panel--chat {
-    height: 60vh;
+    height: 55vh;
+    min-height: 300px;
   }
+
+  .panel--stage {
+    height: 50vw;
+    min-height: 220px;
+  }
+}
+
+/* ===== Thinking indicator ===== */
+.chat-thinking {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  align-self: flex-start;
+  max-width: 80%;
+}
+
+.chat-thinking__dots {
+  display: flex;
+  gap: 4px;
+}
+
+.chat-thinking__dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a84d2f;
+  animation: thinking-bounce 1.2s ease-in-out infinite;
+}
+
+.chat-thinking__dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.chat-thinking__dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes thinking-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-6px); opacity: 1; }
+}
+
+.chat-thinking__label {
+  font-size: 13px;
+  color: #6f5242;
+  font-style: italic;
+}
+
+/* ===== Disabled input form ===== */
+.chat-input-form--disabled {
+  opacity: 0.6;
+  pointer-events: none;
 }

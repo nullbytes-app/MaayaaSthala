@@ -53,7 +53,13 @@ export type AgentStreamMessage =
    * Emitted by the play compiler when a MOOD opcode is encountered.
    * The frontend applies the new mood as a visual/audio atmosphere overlay.
    */
-  | { type: "mood_change"; mood: string };
+  | { type: "mood_change"; mood: string }
+  /**
+   * Per-character browser TTS voice hints emitted before play_start.
+   * Used by the frontend when GCP TTS is unavailable — maps charId (or "narrator")
+   * to gender so the browser can select an appropriate SpeechSynthesisVoice.
+   */
+  | { type: "voice_casting"; casting: Record<string, { gender: "female" | "male" }> };
 
 /** Sent from the browser to the agent over WebSocket. */
 export type ChatInboundMessage =

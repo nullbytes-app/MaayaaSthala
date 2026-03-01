@@ -47,11 +47,12 @@ describe("narrateText — failure cases", () => {
   it("returns unavailable when gcpProject is provided but TTS module not installed", async () => {
     // In test environment, @google-cloud/text-to-speech is likely not installed.
     // The function should gracefully fall back to unavailable, not throw.
+    // Timeout is 15s: the internal TTS timeout is 10s + margin for CI latency.
     const result = await narrateText("Test narration text.", 1, {
       gcpProject: "test-project-that-will-fail"
     });
 
     // Either succeeds (if TTS installed) or falls back gracefully.
     expect(["google_cloud_tts", "unavailable"]).toContain(result.source);
-  });
+  }, 15_000);
 });

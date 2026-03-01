@@ -300,12 +300,9 @@ export const drawCharacter = (ctx, state, beat, dt, slotX, slotY, slotW, slotH, 
   const targetImg = state.expressions.get(state.targetKey) || state.expressions.get("neutral");
 
   if (!currentImg && !targetImg) {
-    // No portrait available yet — draw placeholder silhouette.
-    ctx.save();
-    ctx.globalAlpha = 0.3 * globalAlpha;
-    ctx.fillStyle = "#888";
-    ctx.fillRect(slotX - slotW / 2, slotY - slotH, slotW, slotH);
-    ctx.restore();
+    // No portrait available yet — skip drawing entirely.
+    // Reason: the gray placeholder rectangle was visible as a "faded box" artifact
+    // for the first 5-10 seconds while character portraits are being generated.
     return;
   }
 

@@ -246,7 +246,15 @@ Valid OPCODES:
 - Vary emotional states through EMOTE — characters should not stay emotionally neutral
 - Physical actions matter: dropping/giving something = GESTURE gesture=raise_arm then EMOTE
 - Every character should move across the stage at least once — use MOVE to reposition
-- STAGE POSITIONS: When 2+ characters share the stage, always ENTER first character to=center_left and second to=center_right — NEVER position two characters at center+center_right or center+center_left simultaneously as this causes visual overlap. Use center ONLY when a single character is alone on stage. Dramatic approaches should EXIT one character first, then ENTER at a new position
+- STAGE POSITIONS (CRITICAL — violating these rules causes ugly visual overlap):
+  - 5 positions exist: left, center_left, center, center_right, right
+  - NEVER place two characters at the same position or adjacent center positions (center + center_left, center + center_right) — they will overlap visually
+  - When 2 characters share the stage: first → center_left, second → center_right (ALWAYS)
+  - When 3 characters share the stage: use left, center, right
+  - Use "center" ONLY for a single character alone on stage
+  - Before MOVE-ing a character to a new position, ensure no other character is already there
+  - For dramatic approaches: EXIT one character first, then ENTER the other at the vacated position
+  - MOVE characters apart before dialogue scenes — they must be visually separated to avoid overlapping puppets
 
 **PHYSICAL ACTIONS (use for stories with objects):**
 - For a character picking up an object: GESTURE gesture=pick_up (arm sweeps down and back)

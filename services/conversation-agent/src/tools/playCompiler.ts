@@ -301,10 +301,13 @@ export const compileAndRunPlay = async (
   });
 
   // Signal play start to the client.
+  // Include audioEnabled so the browser knows whether to expect server TTS audio
+  // and can skip browser Web Speech API TTS to avoid dual-voice overlap.
   onMessage({
     type: "play_start",
     sceneId: story.storyId,
-    storyTitle: story.title
+    storyTitle: story.title,
+    audioEnabled
   });
 
   // Apply MythicEngine and stream each command with multimodal output.
@@ -428,7 +431,8 @@ export const compileAndRunPlay = async (
               type: "audio",
               url: audioResult.audioUrl,
               duration: audioResult.durationEstimateMs,
-              beatNumber: command.beat
+              beatNumber: command.beat,
+              speaker: "narrator"
             });
 
             // Use audio duration as the authoritative pacer + peak bonus.
@@ -456,13 +460,15 @@ export const compileAndRunPlay = async (
       onMessage({ type: "stage_command", command });
       onMessage({ type: "play_frame", beat: command.beat, sceneId: story.storyId });
 
+      const speakerCharId = typeof command.payload.role === "string" ? command.payload.role : "character";
+
       if (text && beatDelayMs > 0) {
         // Await character dialogue audio.
         if (audioEnabled) {
           const audioResult = await narrateText(text, command.beat, {
             gcpProject: options.gcpProject,
             voiceType: "character",
-            speaker: typeof command.payload.role === "string" ? command.payload.role : "character",
+            speaker: speakerCharId,
             voiceCasting: options.voiceCasting
           }).catch(() => null);
 
@@ -471,7 +477,8 @@ export const compileAndRunPlay = async (
               type: "audio",
               url: audioResult.audioUrl,
               duration: audioResult.durationEstimateMs,
-              beatNumber: command.beat
+              beatNumber: command.beat,
+              speaker: speakerCharId
             });
 
             await sleep(audioResult.durationEstimateMs + peakBonus);

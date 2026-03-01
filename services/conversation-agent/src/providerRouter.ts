@@ -1,5 +1,5 @@
 import { renderSvgPlaceholder } from "./svgPlaceholder.js";
-import type { CharacterGenerationRequest, CharacterGenerationResult } from "./types.js";
+import type { CharacterGenerationRequest, CharacterGenerationResult, ExpressionMap } from "./types.js";
 
 /**
  * Provider router for character generation.
@@ -87,8 +87,8 @@ const tryStitchScreenFromText = async (
 };
 
 /**
- * Attempt Gemini image generation for character portraits.
- * Uses gemini-2.0-flash-exp with IMAGE response modality.
+ * Attempt Gemini (Nano Banana 2) image generation for character portraits.
+ * Uses gemini-3.1-flash-image-preview with IMAGE response modality.
  * Falls between Vertex AI and SVG placeholder.
  */
 const tryGeminiCharacterImage = async (
@@ -96,17 +96,25 @@ const tryGeminiCharacterImage = async (
   apiKey: string
 ): Promise<CharacterGenerationResult | null> => {
   try {
+    // @ts-ignore — GoogleGenAI is a named ESM export at runtime; TypeScript Bundler moduleResolution mismatch with @google/genai types
     const { GoogleGenAI } = await import("@google/genai");
     const genAI = new GoogleGenAI({ apiKey });
 
+    // Reason: Gemini image models tend to produce character reference sheets with
+    // 3-4 poses/angles. Structuring the prompt as a clear single-subject portrait
+    // request and adding system-level negatives is the most reliable mitigation.
     const prompt =
-      `2D cartoon character for animated show: ${request.name}, ${request.archetype}. ` +
-      `${request.description}. Modern cartoon style, bright vibrant colors, clean bold outlines, ` +
-      `simple shapes, expressive face, full body front view, standing T-pose with arms out and legs slightly apart, ` +
-      `isolated on solid white background #FFFFFF, no shadows, no scenery, no ground, PNG sprite style.`;
+      `Draw a single portrait of the character "${request.name}" for a children's storybook illustration. ` +
+      `${request.description}. ` +
+      `Style: 2D cartoon, bright vibrant colors, clean bold outlines, simple shapes, expressive face. ` +
+      `Pose: front-facing, standing naturally, arms relaxed at sides. ` +
+      `Composition: single character centered, fills 80% of image height, plain solid white background. ` +
+      `This is a single portrait — NOT a character sheet, NOT a turnaround, NOT multiple angles. ` +
+      `Show exactly ONE character in exactly ONE pose. No side view, no back view, no 3/4 view. ` +
+      `No text, no labels, no shadows, no ground, no scenery.`;
 
     const response = await genAI.models.generateContent({
-      model: "gemini-2.0-flash-exp-image-generation",
+      model: "gemini-3.1-flash-image-preview",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
         responseModalities: ["IMAGE", "TEXT"]
@@ -123,7 +131,7 @@ const tryGeminiCharacterImage = async (
             name: request.name,
             previewUrl: `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`,
             hasParts: false,
-            source: "vertex_ai" // Reuse vertex_ai source label for compatibility
+            source: "gemini" as const
           };
         }
       }
@@ -153,10 +161,14 @@ const tryVertexAiImage = async (
 
     const endpoint = `projects/${gcpProject}/locations/${gcpLocation}/publishers/google/models/imagegeneration@006`;
     const prompt =
-      `2D cartoon character for animated show: ${request.name}, ${request.archetype} archetype. ` +
-      `${request.description}. Modern cartoon style, bright vibrant colors, clean bold outlines, ` +
-      `simple shapes, expressive face, full body front view, standing T-pose with arms out and legs slightly apart, ` +
-      `isolated on solid white background #FFFFFF, no shadows, no scenery, no ground, PNG sprite style.`;
+      `Draw a single portrait of the character "${request.name}" for a children's storybook illustration. ` +
+      `${request.description}. ` +
+      `Style: 2D cartoon, bright vibrant colors, clean bold outlines, simple shapes, expressive face. ` +
+      `Pose: front-facing, standing naturally, arms relaxed at sides. ` +
+      `Composition: single character centered, fills 80% of image height, plain solid white background. ` +
+      `This is a single portrait — NOT a character sheet, NOT a turnaround, NOT multiple angles. ` +
+      `Show exactly ONE character in exactly ONE pose. No side view, no back view, no 3/4 view. ` +
+      `No text, no labels, no shadows, no ground, no scenery.`;
 
     const [response] = await client.predict({
       endpoint,
@@ -191,78 +203,100 @@ const tryVertexAiImage = async (
 };
 
 /**
- * Generate 6 body-part images for a character in parallel using Gemini.
- * Each part is prompted with cartoon style on a solid white background for client-side color-keying.
- * Returns a parts object only if all 6 images succeed; otherwise returns null.
+ * Generate a single expression variant image via Gemini.
+ * Uses a strong consistency prompt to match the existing character portrait.
+ * Returns null on failure — neutral image is always the fallback.
  */
-const tryGeminiPartGeneration = async (
-  request: CharacterGenerationRequest,
+const generateSingleExpression = async (
+  name: string,
+  archetype: string,
+  description: string,
+  expressionKey: string,
   apiKey: string
-): Promise<{ head: string; torso: string; leftArm: string; rightArm: string; leftLeg: string; rightLeg: string } | null> => {
+): Promise<string | null> => {
+  const expressionDescriptions: Record<string, string> = {
+    happy: "broadly smiling, eyes bright and crinkled with joy, relaxed open posture, slight bounce in stance",
+    angry: "furrowed brows pulled together, tight lips or bared teeth, tense rigid posture, leaning forward",
+    sad: "downcast eyes looking down-left, slight frown, drooping shoulders, deflated quiet posture"
+  };
+
+  const expressionDesc = expressionDescriptions[expressionKey] ?? expressionKey;
+
   try {
+    // @ts-ignore — GoogleGenAI is a named ESM export at runtime; TypeScript Bundler moduleResolution mismatch
     const { GoogleGenAI } = await import("@google/genai");
     const genAI = new GoogleGenAI({ apiKey });
-    const baseDesc = `${request.name}, ${request.archetype}, ${request.description}. Modern 2D cartoon style, bright colors, clean bold outlines, simple shapes, game sprite asset`;
 
-    const partPrompts: Record<string, string> = {
-      head: `${baseDesc}, head and neck only, front view, no body below neck, isolated on solid white background #FFFFFF, no shadows`,
-      torso: `${baseDesc}, torso from neck to hips only, front view, no head, no arms, no legs, isolated on solid white background #FFFFFF, no shadows`,
-      rightArm: `${baseDesc}, right arm only from shoulder to hand, front view, slightly bent, no body, isolated on solid white background #FFFFFF, no shadows`,
-      leftArm: `${baseDesc}, left arm only from shoulder to hand, front view, slightly bent, no body, isolated on solid white background #FFFFFF, no shadows`,
-      rightLeg: `${baseDesc}, right leg only from hip to foot, front view, no body, isolated on solid white background #FFFFFF, no shadows`,
-      leftLeg: `${baseDesc}, left leg only from hip to foot, front view, no body, isolated on solid white background #FFFFFF, no shadows`
-    };
+    const prompt =
+      `SAME character as before: ${name}, ${archetype}. ${description}. ` +
+      `IDENTICAL hair color, hairstyle, clothing, body proportions, skin tone, art style as the neutral version. ` +
+      `ONLY change: facial expression and slight body language. Expression: ${expressionDesc}. ` +
+      `Modern 2D cartoon style, bright vibrant colors, clean bold outlines, full body front view, ` +
+      `character fills 80% of image height, solid white background #FFFFFF, no shadows, no scenery, PNG sprite style.`;
 
-    // Generate a single part with up to 2 retries if it fails.
-    const generatePartWithRetry = async (partName: string, prompt: string): Promise<{ partName: string; dataUrl: string } | null> => {
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          const response = await genAI.models.generateContent({
-            model: "gemini-2.0-flash-exp-image-generation",
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            config: { responseModalities: ["IMAGE", "TEXT"] }
-          });
-          for (const candidate of response.candidates ?? []) {
-            for (const part of candidate.content?.parts ?? []) {
-              if (part.inlineData?.mimeType?.startsWith("image/") && part.inlineData.data) {
-                return { partName, dataUrl: `data:${part.inlineData.mimeType};base64,${part.inlineData.data}` };
-              }
-            }
-          }
-        } catch {
-          // Retry on error.
+    const response = await genAI.models.generateContent({
+      model: "gemini-3.1-flash-image-preview",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: { responseModalities: ["IMAGE", "TEXT"] }
+    });
+
+    for (const candidate of response.candidates ?? []) {
+      for (const part of candidate.content?.parts ?? []) {
+        if (part.inlineData?.mimeType?.startsWith("image/") && part.inlineData.data) {
+          return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
         }
       }
-      return null;
-    };
-
-    // Fire all 6 image generation calls in parallel for speed.
-    const results = await Promise.all(
-      Object.entries(partPrompts).map(([partName, prompt]) => generatePartWithRetry(partName, prompt))
-    );
-
-    // All 6 parts must succeed for articulated animation to work.
-    const partMap: Record<string, string> = {};
-    for (const result of results) {
-      if (!result) return null;
-      partMap[result.partName] = result.dataUrl;
     }
-
-    if (!partMap.head || !partMap.torso || !partMap.rightArm || !partMap.leftArm || !partMap.rightLeg || !partMap.leftLeg) {
-      return null;
-    }
-
-    return {
-      head: partMap.head,
-      torso: partMap.torso,
-      leftArm: partMap.leftArm,
-      rightArm: partMap.rightArm,
-      leftLeg: partMap.leftLeg,
-      rightLeg: partMap.rightLeg
-    };
+    return null;
   } catch {
     return null;
   }
+};
+
+/**
+ * Generate 4 expression variants for a character portrait (neutral, happy, angry, sad).
+ * Neutral is generated first (synchronously returned); the other 3 fire in parallel
+ * and arrive via the onExpression callback as they complete.
+ *
+ * @param name - Character name for the prompt.
+ * @param archetype - Character archetype (hero, villain, etc.).
+ * @param description - Character visual description.
+ * @param neutralUrl - The already-generated neutral portrait URL.
+ * @param apiKey - Gemini API key.
+ * @param onExpression - Called for each completed non-neutral expression (key + imageUrl).
+ * @param timeoutMs - Timeout per variant in ms (default 15000).
+ */
+export const generateExpressionVariants = async (
+  name: string,
+  archetype: string,
+  description: string,
+  neutralUrl: string,
+  apiKey: string,
+  onExpression: (key: keyof ExpressionMap, imageUrl: string) => void,
+  timeoutMs = 15000
+): Promise<ExpressionMap> => {
+  const expressions: ExpressionMap = { neutral: neutralUrl };
+
+  const withTimeout = <T>(promise: Promise<T | null>): Promise<T | null> =>
+    Promise.race([
+      promise,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs))
+    ]);
+
+  // Fire happy, angry, sad in parallel — each calls onExpression as it arrives.
+  const variantKeys: Array<keyof ExpressionMap> = ["happy", "angry", "sad"];
+  const variantPromises = variantKeys.map(async (key) => {
+    const url = await withTimeout(
+      generateSingleExpression(name, archetype, description, key, apiKey)
+    );
+    if (url) {
+      expressions[key] = url;
+      onExpression(key, url);
+    }
+  });
+
+  await Promise.all(variantPromises);
+  return expressions;
 };
 
 /**
@@ -304,14 +338,6 @@ export const routeCharacterGeneration = async (
     );
 
     if (vertexResult) {
-      // Reason: Vertex AI provides the portrait; Gemini generates parts independently.
-      // Parts enable articulated limb animation regardless of which provider drew the portrait.
-      if (options.apiKey) {
-        const parts = await tryGeminiPartGeneration(request, options.apiKey);
-        if (parts) {
-          vertexResult.parts = parts;
-        }
-      }
       return vertexResult;
     }
   }
@@ -321,12 +347,6 @@ export const routeCharacterGeneration = async (
   if (options.apiKey) {
     const geminiResult = await tryGeminiCharacterImage(request, options.apiKey);
     if (geminiResult) {
-      // Reason: Fire part generation concurrently after the portrait succeeds.
-      // Parts enable articulated limb animation (Phase 2); portrait is shown immediately.
-      const parts = await tryGeminiPartGeneration(request, options.apiKey);
-      if (parts) {
-        geminiResult.parts = parts;
-      }
       return geminiResult;
     }
   }

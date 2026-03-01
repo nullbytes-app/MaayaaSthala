@@ -53,20 +53,25 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const isRecord = (value) => value !== null && typeof value === "object";
 
 /**
- * Remove background pixels from an image by sampling corner colors.
- * Feathers a 10px transition band for smooth edges.
+ * Remove background pixels from an image using flood-fill from borders.
+ * Only pixels contiguous with the image edges that match the sampled
+ * background color are removed.  Interior white (eyes, teeth, highlights)
+ * is preserved because the flood never reaches non-border regions.
+ *
+ * A feather band softens the edge between removed and kept pixels.
  */
 const removeBackground = (img, tolerance = 35) => {
   const offscreen = document.createElement("canvas");
-  offscreen.width = img.naturalWidth || img.width;
-  offscreen.height = img.naturalHeight || img.height;
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  offscreen.width = w;
+  offscreen.height = h;
   const offCtx = offscreen.getContext("2d");
   offCtx.drawImage(img, 0, 0);
-  const imageData = offCtx.getImageData(0, 0, offscreen.width, offscreen.height);
+  const imageData = offCtx.getImageData(0, 0, w, h);
   const data = imageData.data;
 
-  const w = offscreen.width;
-  const h = offscreen.height;
+  // Sample corners to determine background color.
   const corners = [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1]];
   let bgR = 0, bgG = 0, bgB = 0;
   for (const [cx, cy] of corners) {
@@ -80,16 +85,55 @@ const removeBackground = (img, tolerance = 35) => {
   bgB = Math.round(bgB / 4);
 
   const featherBand = 10;
-  for (let i = 0; i < data.length; i += 4) {
-    const dist = Math.max(
-      Math.abs(data[i] - bgR),
-      Math.abs(data[i + 1] - bgG),
-      Math.abs(data[i + 2] - bgB)
-    );
+  // Reason: Uint8Array tracks per-pixel state — 0 = unvisited, 1 = queued/visited-bg,
+  // 2 = feather (edge pixel near bg boundary).
+  const visited = new Uint8Array(w * h);
+
+  const colorDist = (px) => Math.max(
+    Math.abs(data[px] - bgR),
+    Math.abs(data[px + 1] - bgG),
+    Math.abs(data[px + 2] - bgB)
+  );
+
+  // Seed the flood-fill queue with all border pixels that match the bg color.
+  const queue = [];
+  const tryEnqueue = (x, y) => {
+    if (x < 0 || x >= w || y < 0 || y >= h) return;
+    const idx = y * w + x;
+    if (visited[idx]) return;
+    const px = idx * 4;
+    const dist = colorDist(px);
     if (dist < tolerance) {
-      data[i + 3] = 0;
+      visited[idx] = 1;
+      queue.push(idx);
     } else if (dist < tolerance + featherBand) {
-      data[i + 3] = Math.round(((dist - tolerance) / featherBand) * 255);
+      visited[idx] = 2; // feather — mark but don't propagate
+    }
+  };
+
+  // Seed from all 4 borders.
+  for (let x = 0; x < w; x++) { tryEnqueue(x, 0); tryEnqueue(x, h - 1); }
+  for (let y = 1; y < h - 1; y++) { tryEnqueue(0, y); tryEnqueue(w - 1, y); }
+
+  // BFS flood-fill — only spreads through bg-colored pixels.
+  while (queue.length) {
+    const idx = queue.pop();
+    const x = idx % w;
+    const y = (idx - x) / w;
+    tryEnqueue(x - 1, y);
+    tryEnqueue(x + 1, y);
+    tryEnqueue(x, y - 1);
+    tryEnqueue(x, y + 1);
+  }
+
+  // Apply transparency: fully transparent for bg pixels, feathered for edge pixels.
+  for (let i = 0; i < visited.length; i++) {
+    if (visited[i] === 1) {
+      data[i * 4 + 3] = 0;
+    } else if (visited[i] === 2) {
+      const px = i * 4;
+      const dist = colorDist(px);
+      data[px + 3] = Math.round(((dist - tolerance) / featherBand) * 255);
     }
   }
   offCtx.putImageData(imageData, 0, 0);
@@ -280,6 +324,11 @@ export const createStageRenderer = (canvas) => {
   const drawStage = () => {
     if (!ctx || !canvas) return;
 
+    // Reason: clear the canvas each frame to prevent ghost artifacts from previous
+    // frames bleeding through when Ken Burns zoom < 1.0 leaves uncovered edges,
+    // or when curtain transition gold trim burns into the backdrop.
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
     drawBackdrop(ctx, canvas, state);
 
     // Apply mood engine preset to cinematic subsystems.
@@ -364,10 +413,12 @@ export const createStageRenderer = (canvas) => {
     }
     speechBubbles.draw(ctx, artifactsByRole, canvas);
 
+    // Particles drawn inside camera transform so they track character positions.
+    particles.draw(ctx);
+
     camera?.restoreTransform(ctx);
 
-    // Particles and screen effects in screen space (outside camera transform).
-    particles.draw(ctx);
+    // Screen effects in screen space (outside camera transform).
     screenEffects?.draw(ctx, state.beat);
     drawCaption(ctx, canvas, state.caption);
     // Curtain/fade overlay drawn last so it covers everything.
@@ -500,8 +551,11 @@ export const createStageRenderer = (canvas) => {
       const emotion = typeof payload.emotion === "string" ? payload.emotion
         : typeof payload.gesture === "string" ? payload.gesture : "";
       if (emotion) {
-        // Emit particles above character.
-        particles.emit(emotion, artifact.x, artifact.y - SLOT_H * 0.9);
+        // Emit particles around character's torso area.
+        // artifact.y is the foot position (~390). Character height is SLOT_H * depthScale.
+        // Torso is roughly 60% up from feet.
+        const charH = SLOT_H * (artifact.depthScale ?? 1.0);
+        particles.emit(emotion, artifact.x, artifact.y - charH * 0.6);
       }
     }
 
@@ -726,11 +780,14 @@ export const createStageRenderer = (canvas) => {
       if (!charId || !expressionKey || !imageUrl) return;
       const exprState = getExprState(charId);
 
+      // Skip bg removal for AI-generated portraits and SVG placeholders (already transparent).
+      const skipBgRemoval = imageUrl.includes("/generated/") || imageUrl.startsWith("data:image/svg");
+
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.onload = () => {
-        const cutout = removeBackground(img);
-        addExpression(exprState, expressionKey, cutout);
+        const source = skipBgRemoval ? img : removeBackground(img);
+        addExpression(exprState, expressionKey, source);
         drawStage();
       };
       img.onerror = () => {};

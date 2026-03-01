@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@google/adk": "^0.3.0",
+    "@google/genai": "^1.0.0",
     "@grpc/grpc-js": "^1.14.1",
     "@grpc/proto-loader": "^0.8.0",
     "ajv": "^8.17.1",

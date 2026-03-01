@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { fileURLToPath } from "node:url";
 
 import { createResolverHttpServer } from "./httpServer";

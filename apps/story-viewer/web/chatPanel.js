@@ -255,13 +255,13 @@ export const createChatPanel = (container, options) => {
   };
 
   /** Render a play_start banner. */
-  const renderPlayStart = (sceneId, storyTitle) => {
+  const renderPlayStart = (sceneId, storyTitle, audioEnabled) => {
     const banner = document.createElement("div");
     banner.className = "chat-play-banner";
     banner.innerHTML = `<span>🎭</span> <strong>${sanitize(storyTitle)}</strong> — Performance starting...`;
     container.appendChild(banner);
     scrollToBottom();
-    onPlayStart?.(storyTitle);
+    onPlayStart?.(storyTitle, audioEnabled);
   };
 
   /** Render an error message. */
@@ -310,7 +310,7 @@ export const createChatPanel = (container, options) => {
         break;
 
       case "play_start":
-        renderPlayStart(message.sceneId, message.storyTitle);
+        renderPlayStart(message.sceneId, message.storyTitle, message.audioEnabled);
         break;
 
       case "thinking":
@@ -365,5 +365,16 @@ export const createChatPanel = (container, options) => {
     onInputEnabled?.(enabled);
   };
 
-  return { handleMessage, renderUserMessage, clear, setStatus, setInputEnabled };
+  /** Stop and remove the currently playing audio element. */
+  const stopAudio = () => {
+    if (currentAudioEl) {
+      currentAudioEl.pause();
+      currentAudioEl.src = "";
+      currentAudioEl.remove();
+      currentAudioEl = null;
+      onAudioEnded?.();
+    }
+  };
+
+  return { handleMessage, renderUserMessage, clear, setStatus, setInputEnabled, stopAudio };
 };

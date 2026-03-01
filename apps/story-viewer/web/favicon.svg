@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Background circle — deep stage red -->
+  <circle cx="32" cy="32" r="30" fill="#8B1A2B"/>
+  <circle cx="32" cy="32" r="28" fill="#A52238"/>
+  <!-- Gold border ring -->
+  <circle cx="32" cy="32" r="30" fill="none" stroke="#D4A017" stroke-width="2.5"/>
+  <!-- Stage curtain drapes — left -->
+  <path d="M8 8 Q12 32 8 56 L2 56 L2 8 Z" fill="#6A0E1C" opacity="0.7"/>
+  <path d="M8 8 Q10 28 8 56" fill="none" stroke="#FFD700" stroke-width="0.8" opacity="0.6"/>
+  <!-- Stage curtain drapes — right -->
+  <path d="M56 8 Q52 32 56 56 L62 56 L62 8 Z" fill="#6A0E1C" opacity="0.7"/>
+  <path d="M56 8 Q54 28 56 56" fill="none" stroke="#FFD700" stroke-width="0.8" opacity="0.6"/>
+  <!-- Top valance -->
+  <path d="M2 8 Q18 16 32 12 Q46 16 62 8 L62 4 L2 4 Z" fill="#501018"/>
+  <path d="M2 8 Q18 16 32 12 Q46 16 62 8" fill="none" stroke="#FFD700" stroke-width="1.2"/>
+  <!-- Theatre masks — comedy (left) -->
+  <g transform="translate(20, 28) scale(0.7)">
+    <ellipse cx="0" cy="0" rx="12" ry="14" fill="#FFE4B5" stroke="#8B6914" stroke-width="1.5"/>
+    <!-- Smile -->
+    <path d="M-6 3 Q0 12 6 3" fill="none" stroke="#4A2800" stroke-width="1.8" stroke-linecap="round"/>
+    <!-- Eyes -->
+    <ellipse cx="-4" cy="-4" rx="2.5" ry="3" fill="#2C1810"/>
+    <ellipse cx="4" cy="-4" rx="2.5" ry="3" fill="#2C1810"/>
+    <!-- Eyebrow arches — happy -->
+    <path d="M-7 -8 Q-4 -11 -1 -8" fill="none" stroke="#4A2800" stroke-width="1.2" stroke-linecap="round"/>
+    <path d="M1 -8 Q4 -11 7 -8" fill="none" stroke="#4A2800" stroke-width="1.2" stroke-linecap="round"/>
+  </g>
+  <!-- Theatre masks — tragedy (right) -->
+  <g transform="translate(44, 28) scale(0.7)">
+    <ellipse cx="0" cy="0" rx="12" ry="14" fill="#FFE4B5" stroke="#8B6914" stroke-width="1.5"/>
+    <!-- Frown -->
+    <path d="M-6 6 Q0 -1 6 6" fill="none" stroke="#4A2800" stroke-width="1.8" stroke-linecap="round"/>
+    <!-- Eyes -->
+    <ellipse cx="-4" cy="-4" rx="2.5" ry="3" fill="#2C1810"/>
+    <ellipse cx="4" cy="-4" rx="2.5" ry="3" fill="#2C1810"/>
+    <!-- Eyebrow arches — sad -->
+    <path d="M-7 -7 Q-4 -9 -1 -7" fill="none" stroke="#4A2800" stroke-width="1.2" stroke-linecap="round"/>
+    <path d="M1 -7 Q4 -9 7 -7" fill="none" stroke="#4A2800" stroke-width="1.2" stroke-linecap="round"/>
+  </g>
+  <!-- Decorative diya (oil lamp) at bottom center -->
+  <g transform="translate(32, 50)">
+    <ellipse cx="0" cy="0" rx="6" ry="3" fill="#D4A017"/>
+    <ellipse cx="0" cy="0" rx="4" ry="2" fill="#FFD700"/>
+    <!-- Flame -->
+    <path d="M0 -2 Q-2 -7 0 -10 Q2 -7 0 -2" fill="#FF6B00"/>
+    <path d="M0 -3 Q-1 -6 0 -8 Q1 -6 0 -3" fill="#FFD700"/>
+  </g>
+</svg>

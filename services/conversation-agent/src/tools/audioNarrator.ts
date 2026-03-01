@@ -2,21 +2,24 @@
  * Audio narration tool using Google Cloud Text-to-Speech.
  *
  * Strategy:
- * - Primary: Google Cloud TTS (WaveNet/Neural2 — free 1M chars/month)
+ * - Primary: Google Cloud TTS (Chirp HD — more natural than Neural2, same free tier)
  * - Supports Indian English accent (en-IN) and Hindi (hi-IN)
  * - Returns a data URI or Cloud Storage URL for the audio
  */
 
 /**
- * Available Neural2 voices for each language, used by the AI voice casting system.
- * Each voice has a gender and quality descriptor to help the AI assign appropriate voices.
+ * Available Chirp HD voices for each language, used by the AI voice casting system.
+ * Chirp HD voices are a generational leap over Neural2 — more natural prosody,
+ * better intonation, less robotic. Same API and pricing tier.
  */
 export const DEFAULT_VOICE_PALETTE = {
   "en-IN": [
-    { id: "en-IN-Neural2-A", gender: "female", quality: "warm" },
-    { id: "en-IN-Neural2-B", gender: "female", quality: "soft" },
-    { id: "en-IN-Neural2-C", gender: "male", quality: "deep" },
-    { id: "en-IN-Neural2-D", gender: "male", quality: "bright" },
+    { id: "en-IN-Chirp3-HD-Aoede", gender: "female", quality: "warm" },
+    { id: "en-IN-Chirp3-HD-Kore", gender: "female", quality: "soft" },
+    { id: "en-IN-Chirp3-HD-Enceladus", gender: "male", quality: "deep" },
+    { id: "en-IN-Chirp3-HD-Charon", gender: "male", quality: "bright" },
+    { id: "en-IN-Chirp3-HD-Achernar", gender: "female", quality: "gentle" },
+    { id: "en-IN-Chirp3-HD-Puck", gender: "male", quality: "playful" },
   ],
   "hi-IN": [
     { id: "hi-IN-Neural2-A", gender: "female", quality: "warm" },
@@ -51,31 +54,51 @@ export function resolveVoiceConfig(
   casting: VoiceCasting
 ): { voiceName: string; speakingRate: number; pitch: number } {
   const entry = casting[speaker];
+  console.log(`[audioNarrator] resolveVoiceConfig speaker="${speaker}" found=${!!entry} voice=${entry?.voice ?? "FALLBACK"}`);
   if (entry) {
     return { voiceName: entry.voice, speakingRate: entry.rate, pitch: entry.pitch };
   }
   // Reason: unknown speakers fall back to role-based defaults so the experience
   // degrades gracefully rather than erroring when casting is incomplete.
   if (speaker === "narrator") {
-    return { voiceName: "en-IN-Neural2-A", speakingRate: 0.85, pitch: -1.0 };
+    return { voiceName: "en-IN-Chirp3-HD-Enceladus", speakingRate: 0.85, pitch: -1.0 };
   }
-  return { voiceName: "en-IN-Neural2-D", speakingRate: 1.0, pitch: 0.0 };
+  return { voiceName: "en-IN-Chirp3-HD-Charon", speakingRate: 1.0, pitch: 0.0 };
 }
 
 /**
- * Build SSML markup for Google Cloud TTS with emotion-appropriate prosody.
+ * Build SSML markup for Google Cloud TTS with natural pacing.
  *
- * - Replaces "..." with dramatic pause breaks
- * - Wraps text in prosody tags for emotion hints (whisper, shout, excited, sad, dramatic)
- * - Neutral/undefined emotion: plain speak wrapper with no prosody modification
+ * Chirp HD / Chirp3-HD voices only support: <phoneme>, <p>, <s>, <sub>, <say-as>.
+ * They do NOT support <prosody>, <break>, <emphasis>, or pitch/volume control.
+ * Neural2/Wavenet voices support the full SSML spec including <prosody> and <break>.
  *
  * @param text - Plain text to convert to SSML.
- * @param emotionHint - Optional emotion key from bubble shape or story mood.
+ * @param emotionHint - Optional emotion key (used for Neural2 prosody only).
+ * @param voiceName - Voice name to determine which SSML tags are supported.
  * @returns Valid SSML string ready for Google Cloud TTS `input.ssml` field.
  */
-export function buildSSML(text: string, emotionHint?: string): string {
-  // Replace "..." with a dramatic pause break.
-  // Reason: ellipsis in narration signals a pause — SSML break makes it audible.
+export function buildSSML(text: string, emotionHint?: string, voiceName?: string): string {
+  const isChirp = voiceName?.includes("Chirp") ?? false;
+
+  if (isChirp) {
+    // Reason: Chirp HD voices produce natural prosody automatically — they handle
+    // pacing, emphasis, and intonation from the text itself. We use <p> and <s>
+    // for paragraph/sentence boundaries which Chirp HD respects for natural pauses.
+    // Split on sentence-ending punctuation to give the voice natural breathing room.
+    const sentences = text
+      .replace(/\.\.\./g, "…")   // preserve ellipsis as a single character
+      .split(/(?<=[.!?])\s+/)    // split on sentence boundaries
+      .filter(s => s.trim());
+
+    if (sentences.length <= 1) {
+      return `<speak><p>${text}</p></speak>`;
+    }
+    const ssmlSentences = sentences.map(s => `<s>${s}</s>`).join("");
+    return `<speak><p>${ssmlSentences}</p></speak>`;
+  }
+
+  // Neural2/Wavenet — full SSML support with prosody and break tags.
   let inner = text.replace(/\.\.\./g, '<break time="400ms"/>');
 
   switch (emotionHint) {
@@ -95,7 +118,6 @@ export function buildSSML(text: string, emotionHint?: string): string {
       inner = `<prosody rate="slow">${inner}</prosody>`;
       break;
     default:
-      // neutral or unknown — no prosody wrapping
       break;
   }
 
@@ -165,6 +187,7 @@ export const narrateText = async (
 
   try {
     const result = await callGoogleCloudTts(text, options);
+    console.log(`[audioNarrator] TTS success speaker="${options.speaker}" audioUrl=${result.audioUrl ? result.audioUrl.slice(0, 40) + "..." : "EMPTY"}`);
     return {
       audioUrl: result.audioUrl,
       durationEstimateMs: result.durationMs ?? estimateDurationMs(text),
@@ -172,7 +195,8 @@ export const narrateText = async (
       beatNumber,
       source: "google_cloud_tts"
     };
-  } catch {
+  } catch (err) {
+    console.log(`[audioNarrator] TTS FAILED speaker="${options.speaker}" err=${err instanceof Error ? err.message : String(err)}`);
     return {
       audioUrl: "",
       durationEstimateMs: estimateDurationMs(text),
@@ -194,7 +218,16 @@ const callGoogleCloudTts = async (
 ): Promise<TtsCallResult> => {
   // Dynamic import: @google-cloud/text-to-speech may not be installed in dev.
   const { TextToSpeechClient } = await import("@google-cloud/text-to-speech");
-  const client = new TextToSpeechClient();
+  // Reason: gcloud ADC credentials may authenticate as a different project than
+  // GOOGLE_CLOUD_PROJECT from .env. Override GOOGLE_CLOUD_PROJECT env at runtime
+  // so the client library routes TTS API calls to the correct project where the
+  // API is enabled, rather than the gcloud CLI default project.
+  if (options.gcpProject) {
+    process.env.GOOGLE_CLOUD_PROJECT = options.gcpProject;
+    process.env.GCLOUD_PROJECT = options.gcpProject;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const client = new (TextToSpeechClient as any)({ projectId: options.gcpProject });
 
   const languageCode = options.languageCode ?? "en-IN";
 
@@ -214,12 +247,21 @@ const callGoogleCloudTts = async (
     // Legacy fallback: use voiceType heuristic (backwards compatible).
     const isHindi = languageCode === "hi-IN";
     const isCharacterVoice = options.voiceType === "character";
-    // Neural2 voices give the best quality; fallback to Wavenet if unavailable.
-    // Narrator: en-IN-Neural2-A (deeper, slower) | Character: en-IN-Neural2-D (lighter, normal)
+    // Chirp HD voices for natural quality; Hindi falls back to Neural2.
     voiceName = options.voiceName ??
-      (isHindi ? "hi-IN-Neural2-A" : isCharacterVoice ? "en-IN-Neural2-D" : "en-IN-Neural2-A");
+      (isHindi ? "hi-IN-Neural2-A" : isCharacterVoice ? "en-IN-Chirp3-HD-Charon" : "en-IN-Chirp3-HD-Enceladus");
     speakingRate = isCharacterVoice ? 1.0 : 0.85; // Narrator slower for warmth
     pitch = isCharacterVoice ? 0.0 : -1.0; // Narrator deeper
+  }
+
+  // Reason: Chirp HD and Chirp3-HD voices do NOT support the pitch parameter —
+  // they produce natural prosody automatically. Sending pitch causes INVALID_ARGUMENT.
+  // Only include pitch for Neural2/Wavenet/Standard voices.
+  const isChirpVoice = voiceName.includes("Chirp");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const audioConfig: any = { audioEncoding: "MP3", speakingRate };
+  if (!isChirpVoice) {
+    audioConfig.pitch = pitch;
   }
 
   // Reason: GCP TTS can hang indefinitely when credentials are invalid or the project
@@ -229,11 +271,13 @@ const callGoogleCloudTts = async (
     new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("TTS timeout after 10s")), 10_000);
       client.synthesizeSpeech({
-        input: { ssml: buildSSML(text, options.emotionHint) },
+        input: { ssml: buildSSML(text, options.emotionHint, voiceName) },
         voice: { languageCode, name: voiceName },
-        audioConfig: { audioEncoding: "MP3", speakingRate, pitch }
-      }).then((result) => { clearTimeout(timer); resolve(result); })
-        .catch((err) => { clearTimeout(timer); reject(err); });
+        audioConfig
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      }).then((result: any) => { clearTimeout(timer); resolve(result); })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .catch((err: any) => { clearTimeout(timer); reject(err); });
     });
 
   const [response] = await synthesizeWithTimeout();

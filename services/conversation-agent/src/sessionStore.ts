@@ -39,7 +39,9 @@ export class ConversationSessionStore {
       createdAt: Date.now(),
       lastActiveAt: Date.now(),
       approvedCharacters: new Map(),
-      pendingApprovals: new Map()
+      pendingApprovals: new Map(),
+      state: "IDLE",
+      activeTurn: Promise.resolve()
     };
 
     this.sessions.set(session.sessionId, session);
@@ -90,6 +92,13 @@ export class ConversationSessionStore {
 
     const approval = session.pendingApprovals.get(requestId);
     if (!approval) {
+      return false;
+    }
+
+    // Validate that the choice is one of the declared options.
+    // Reason: prevents arbitrary strings from resolving approvals, which could
+    // cause unhandled branches in agent logic that pattern-matches on choice values.
+    if (approval.choices.length > 0 && !approval.choices.includes(choice)) {
       return false;
     }
 

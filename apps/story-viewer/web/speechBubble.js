@@ -333,10 +333,15 @@ export function createSpeechBubbleSystem() {
       const charX = artifact.x;
       const charY = artifact.y; // feet position (~395)
       const depthScale = artifact.depthScale ?? 1.0;
-      const charH = 340 * depthScale;
 
-      // Mouth position: ~60% from top of character slot = below head fraction
-      const mouthY = charY - charH * 0.60;
+      // Actual portrait draw height ≈ SLOT_H * 0.70 * depthScale.
+      // Reason: fitPortraitToSlot caps drawW at slotH * 0.70 for all portrait aspects,
+      // so drawH = drawW / aspect ≈ slotH * 0.70 for square (1:1) portraits.
+      // Using SLOT_H (340) directly overestimates by ~43% and pushes bubble to canvas top.
+      const charDrawH = 340 * 0.70 * depthScale; // ≈ 238px at depthScale=1
+
+      // Mouth position: ~55% up from feet = chin/lower-face area of the portrait.
+      const mouthY = charY - charDrawH * 0.55;
       const mouthX = charX;
 
       // Measure text to size bubble
@@ -365,13 +370,10 @@ export function createSpeechBubbleSystem() {
       const bw = textW;
       const bh = textH;
 
-      // Default position: centered above character head.
-      // Head top is ~85% of the slot height above the feet position (charY).
-      // Reason: artifact.y is the floor/feet position; the head occupies roughly
-      // the top 15% of the slot, so head-top ≈ charY - charH * 0.85.
-      const headTopY = charY - charH * 0.85;
+      // Position bubble just above the mouth (chin area) with 8px clearance.
+      // mouthY is ~55% up from feet, so bubble sits naturally near upper-chest/face level.
       let bx = charX - bw / 2;
-      let by = headTopY - bh - 12; // 12px clearance above head top
+      let by = mouthY - bh - 8;
 
       // Clamp to canvas bounds so the bubble is always fully visible.
       bx = Math.max(MARGIN, Math.min((canvas?.width ?? CANVAS_W) - bw - MARGIN, bx));

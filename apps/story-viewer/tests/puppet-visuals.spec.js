@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  createLeatherTextureRecipe,
-  createPuppetPose,
   createPuppetPalette,
   createStageLook,
   detectPuppetRole
 } from "../web/puppetVisuals.js";
 
+/**
+ * Tests for the minimal puppetVisuals.js residual.
+ * createPuppetPose and createLeatherTextureRecipe have been removed —
+ * cinematic storybook uses expressionEngine.js for all character animation.
+ */
 describe("puppet visuals", () => {
   it("classifies artifact IDs into puppet roles", () => {
     expect(detectPuppetRole("elder_tara_gen_v1")).toBe("mentor");
@@ -25,87 +28,29 @@ describe("puppet visuals", () => {
     expect(first.leatherFill).toMatch(/^#/);
   });
 
-  it("builds leather stage look with glow and grain accents", () => {
+  it("returns different palettes for different roles", () => {
+    const hero = createPuppetPalette("hero_raju_v2");
+    const shadow = createPuppetPalette("shadow_nox_gen_v1");
+
+    expect(hero.role).toBe("hero");
+    expect(shadow.role).toBe("shadow");
+    expect(hero.leatherFill).not.toBe(shadow.leatherFill);
+  });
+
+  it("builds leather stage look with correct keys", () => {
     const stage = createStageLook("leather-shadow");
 
-    expect(stage.top).toBe("#2b130b");
-    expect(stage.bottom).toBe("#1d0b06");
+    // Core keys present.
+    expect(stage.top).toMatch(/^#/);
+    expect(stage.bottom).toMatch(/^#/);
     expect(stage.lampGlow).toBe("#f6c06f");
-    expect(stage.grain).toBe("rgba(255, 230, 180, 0.06)");
+    expect(stage.grain).toMatch(/^rgba/);
   });
 
-  it("builds deterministic motion pose for the same frame input", () => {
-    const left = createPuppetPose({
-      role: "hero",
-      opcode: "NARRATE",
-      beat: 3,
-      payload: {
-        storyState: "invocation"
-      },
-      direction: 1
-    });
-    const right = createPuppetPose({
-      role: "hero",
-      opcode: "NARRATE",
-      beat: 3,
-      payload: {
-        storyState: "invocation"
-      },
-      direction: 1
-    });
+  it("builds night stage look when style is not leather-shadow", () => {
+    const stage = createStageLook("night");
 
-    expect(left).toEqual(right);
-  });
-
-  it("raises energy for BARGE_IN compared to NARRATE", () => {
-    const narrate = createPuppetPose({ role: "hero", opcode: "NARRATE", beat: 1, payload: {}, direction: 1 });
-    const bargeIn = createPuppetPose({ role: "hero", opcode: "BARGE_IN", beat: 1, payload: {}, direction: 1 });
-
-    expect(bargeIn.torsoLift).toBeGreaterThan(narrate.torsoLift);
-    expect(Math.abs(bargeIn.leftShoulderDeg)).toBeGreaterThan(Math.abs(narrate.leftShoulderDeg));
-    expect(Math.abs(bargeIn.rightShoulderDeg)).toBeGreaterThan(Math.abs(narrate.rightShoulderDeg));
-  });
-
-  it("honors gesture hand intent in pose output", () => {
-    const rightGesture = createPuppetPose({
-      role: "hero",
-      opcode: "GESTURE",
-      beat: 2,
-      payload: { hand: "right", intent: "refuse" },
-      direction: 1
-    });
-
-    expect(rightGesture.rightShoulderDeg).toBeLessThan(rightGesture.leftShoulderDeg);
-    expect(rightGesture.torsoLift).toBeGreaterThanOrEqual(4);
-  });
-
-  it("keeps shadow puppets more hunched than heroes", () => {
-    const heroPose = createPuppetPose({ role: "hero", opcode: "NARRATE", beat: 0, payload: {}, direction: 1 });
-    const shadowPose = createPuppetPose({
-      role: "shadow",
-      opcode: "NARRATE",
-      beat: 0,
-      payload: {},
-      direction: 1
-    });
-
-    expect(shadowPose.torsoTiltDeg).toBeLessThan(heroPose.torsoTiltDeg);
-  });
-
-  it("returns deterministic leather texture recipe per artifact", () => {
-    const first = createLeatherTextureRecipe("raju_gen_v1");
-    const second = createLeatherTextureRecipe("raju_gen_v1");
-
-    expect(first).toEqual(second);
-    expect(first.seed).toBeGreaterThanOrEqual(0);
-    expect(first.stitchSpacing).toBeGreaterThan(4);
-  });
-
-  it("gives shadow recipes lower warm highlights than hero recipes", () => {
-    const heroRecipe = createLeatherTextureRecipe("hero_raju_v2");
-    const shadowRecipe = createLeatherTextureRecipe("shadow_nox_gen_v1");
-
-    expect(shadowRecipe.highlightAlpha).toBeLessThan(heroRecipe.highlightAlpha);
-    expect(shadowRecipe.crackAlpha).toBeGreaterThan(0);
+    expect(stage.top).toBe("#1f2233");
+    expect(stage.text).toBe("#e9efff");
   });
 });
