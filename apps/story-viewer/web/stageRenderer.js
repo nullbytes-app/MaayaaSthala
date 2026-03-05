@@ -291,6 +291,8 @@ export const createStageRenderer = (canvas) => {
     characterPortraits: new Map(),
     // Portrait version guards.
     portraitVersions: new Map(),
+    // AI-generated prop images keyed by propType string → loaded HTMLImageElement.
+    propImages: new Map(),
     // Caption overlay.
     caption: null,
     captionTimer: null,
@@ -400,7 +402,20 @@ export const createStageRenderer = (canvas) => {
     for (const [, artifact] of Object.entries(state.artifacts)) {
       if (!artifact.isProp || artifact.visible === false) continue;
       const propDepthScale = 0.78 + clamp((artifact.y - 200) / 200, 0, 1) * 0.32;
-      drawPropSVG(ctx, artifact.propType, artifact.x, artifact.y, propDepthScale * 0.7);
+      const scale = propDepthScale * 0.7;
+
+      const propImg = state.propImages.get(artifact.propType);
+      if (propImg?.complete && propImg.naturalWidth > 0) {
+        // AI-generated image: draw centered at (x, y) with depth scale applied.
+        const w = 80 * scale;
+        const h = 100 * scale;
+        ctx.save();
+        ctx.drawImage(propImg, artifact.x - w / 2, artifact.y - h, w, h);
+        ctx.restore();
+      } else {
+        // Canvas 2D fallback — works for the 6 known types, silent no-op for unknown.
+        drawPropSVG(ctx, artifact.propType, artifact.x, artifact.y, scale);
+      }
     }
 
     // Speech bubbles drawn inside camera transform so they shake/zoom with the scene.
@@ -681,6 +696,7 @@ export const createStageRenderer = (canvas) => {
       state.characterPortraits = new Map();
       state.expressionStates = new Map();
       state.portraitVersions = new Map();
+      state.propImages = new Map();
       state.caption = null;
       if (state.captionTimer) {
         clearTimeout(state.captionTimer);
@@ -792,6 +808,23 @@ export const createStageRenderer = (canvas) => {
       };
       img.onerror = () => {};
       img.src = imageUrl;
+    },
+
+    /**
+     * Register an AI-generated prop image for a given propType.
+     * Called when a prop_image message arrives from the server.
+     * Once the image loads, subsequent drawStage calls use it instead of Canvas 2D.
+     *
+     * @param {string} propType - The propType string from the PROP opcode.
+     * @param {string} imageUrl - The data URL of the AI-generated prop image.
+     */
+    registerPropImage(propType, imageUrl) {
+      if (!propType || !imageUrl) return;
+      const img = new Image();
+      img.onload = () => drawStage();
+      img.onerror = () => {};
+      img.src = imageUrl;
+      state.propImages.set(propType, img);
     },
 
     /**

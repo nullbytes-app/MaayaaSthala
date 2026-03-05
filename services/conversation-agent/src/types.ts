@@ -8,7 +8,7 @@ import type { TheatreState } from "./agents/types.js";
 export type AgentStreamMessage =
   | { type: "text"; content: string }
   | { type: "image"; url: string; caption: string }
-  | { type: "audio"; url: string; duration: number; beatNumber?: number }
+  | { type: "audio"; url: string; duration: number; beatNumber?: number; speaker?: string }
   /**
    * Recorded video artifact (Phase 5 — not yet produced).
    *
@@ -23,7 +23,7 @@ export type AgentStreamMessage =
   | { type: "video"; url: string; mimeType: "video/mp4"; sceneId: string }
   | { type: "stage_command"; command: RuntimeStageCommand }
   | { type: "approval_request"; requestId: string; choices: string[]; context: string }
-  | { type: "play_start"; sceneId: string; storyTitle: string }
+  | { type: "play_start"; sceneId: string; storyTitle: string; audioEnabled?: boolean }
   | { type: "play_frame"; beat: number; sceneId: string }
   | { type: "error"; message: string }
   /**
@@ -48,6 +48,12 @@ export type AgentStreamMessage =
    * Frontend transitions to the new expression via crossfade when ready.
    */
   | { type: "character_expression_update"; charId: string; expressionKey: keyof ExpressionMap; imageUrl: string }
+  /**
+   * AI-generated prop image for use as a stage prop sprite.
+   * Emitted in parallel before play starts for each unique propType in the NatyaScript.
+   * Client stores in propImages Map; drawStage uses it instead of Canvas 2D fallback.
+   */
+  | { type: "prop_image"; propType: string; imageUrl: string }
   /**
    * Global mood state change for the frontend mood engine.
    * Emitted by the play compiler when a MOOD opcode is encountered.

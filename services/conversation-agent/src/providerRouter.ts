@@ -204,7 +204,8 @@ const tryVertexAiImage = async (
 
 /**
  * Generate a single expression variant image via Gemini.
- * Uses a strong consistency prompt to match the existing character portrait.
+ * Passes the neutral portrait as a reference image so Gemini can match the exact
+ * character appearance and only change the facial expression / body language.
  * Returns null on failure — neutral image is always the fallback.
  */
 const generateSingleExpression = async (
@@ -212,7 +213,8 @@ const generateSingleExpression = async (
   archetype: string,
   description: string,
   expressionKey: string,
-  apiKey: string
+  apiKey: string,
+  neutralUrl: string  // base64 data URL of the neutral portrait for visual reference
 ): Promise<string | null> => {
   const expressionDescriptions: Record<string, string> = {
     happy: "broadly smiling, eyes bright and crinkled with joy, relaxed open posture, slight bounce in stance",
@@ -228,15 +230,25 @@ const generateSingleExpression = async (
     const genAI = new GoogleGenAI({ apiKey });
 
     const prompt =
-      `SAME character as before: ${name}, ${archetype}. ${description}. ` +
-      `IDENTICAL hair color, hairstyle, clothing, body proportions, skin tone, art style as the neutral version. ` +
-      `ONLY change: facial expression and slight body language. Expression: ${expressionDesc}. ` +
-      `Modern 2D cartoon style, bright vibrant colors, clean bold outlines, full body front view, ` +
-      `character fills 80% of image height, solid white background #FFFFFF, no shadows, no scenery, PNG sprite style.`;
+      `This is the REFERENCE portrait of ${name}, ${archetype}. ${description}. ` +
+      `Generate the EXACT SAME character with IDENTICAL design, colors, clothing, proportions, and art style. ` +
+      `ONLY change: facial expression and slight body language to show: ${expressionDesc}. ` +
+      `Keep everything else pixel-perfect consistent with the reference image. ` +
+      `Full body front view, character fills 80% of image height, solid white background #FFFFFF, no shadows, no scenery, PNG sprite style.`;
+
+    // Include the neutral portrait as a visual reference if it's a valid base64 data URL.
+    // Reason: multimodal input lets Gemini see the actual character design and produce
+    // consistent expression variants instead of regenerating a different character from scratch.
+    const base64Match = neutralUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+    const parts: Array<Record<string, unknown>> = [];
+    if (base64Match) {
+      parts.push({ inlineData: { mimeType: base64Match[1], data: base64Match[2] } });
+    }
+    parts.push({ text: prompt });
 
     const response = await genAI.models.generateContent({
       model: "gemini-3.1-flash-image-preview",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      contents: [{ role: "user", parts }],
       config: { responseModalities: ["IMAGE", "TEXT"] }
     });
 
@@ -254,17 +266,18 @@ const generateSingleExpression = async (
 };
 
 /**
- * Generate 4 expression variants for a character portrait (neutral, happy, angry, sad).
- * Neutral is generated first (synchronously returned); the other 3 fire in parallel
- * and arrive via the onExpression callback as they complete.
+ * Generate expression variants for a character portrait (neutral always included).
+ * Only generates the variants specified by requiredKeys (defaults to all: happy, angry, sad).
+ * Variants fire in parallel and arrive via the onExpression callback as they complete.
  *
  * @param name - Character name for the prompt.
  * @param archetype - Character archetype (hero, villain, etc.).
  * @param description - Character visual description.
- * @param neutralUrl - The already-generated neutral portrait URL.
+ * @param neutralUrl - The already-generated neutral portrait URL (also used as reference image).
  * @param apiKey - Gemini API key.
  * @param onExpression - Called for each completed non-neutral expression (key + imageUrl).
  * @param timeoutMs - Timeout per variant in ms (default 15000).
+ * @param requiredKeys - Only generate these expression variants (omit to generate all three).
  */
 export const generateExpressionVariants = async (
   name: string,
@@ -273,7 +286,8 @@ export const generateExpressionVariants = async (
   neutralUrl: string,
   apiKey: string,
   onExpression: (key: keyof ExpressionMap, imageUrl: string) => void,
-  timeoutMs = 15000
+  timeoutMs = 15000,
+  requiredKeys?: Array<keyof ExpressionMap>
 ): Promise<ExpressionMap> => {
   const expressions: ExpressionMap = { neutral: neutralUrl };
 
@@ -283,11 +297,11 @@ export const generateExpressionVariants = async (
       new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs))
     ]);
 
-  // Fire happy, angry, sad in parallel — each calls onExpression as it arrives.
-  const variantKeys: Array<keyof ExpressionMap> = ["happy", "angry", "sad"];
+  // Use only the required keys if provided, otherwise generate all three variants.
+  const variantKeys: Array<keyof ExpressionMap> = requiredKeys ?? ["happy", "angry", "sad"];
   const variantPromises = variantKeys.map(async (key) => {
     const url = await withTimeout(
-      generateSingleExpression(name, archetype, description, key, apiKey)
+      generateSingleExpression(name, archetype, description, key, apiKey, neutralUrl)
     );
     if (url) {
       expressions[key] = url;
@@ -297,6 +311,57 @@ export const generateExpressionVariants = async (
 
   await Promise.all(variantPromises);
   return expressions;
+};
+
+/**
+ * Generate a prop image via Gemini for use as a stage prop sprite.
+ * Returns a base64 data URL or null if generation fails.
+ * Falls back gracefully — Canvas 2D drawing is always the fallback.
+ *
+ * @param propType - Descriptive snake_case prop name (e.g. "throne", "sword", "well").
+ * @param apiKey - Gemini API key.
+ * @param timeoutMs - Timeout in ms (default 12000).
+ */
+export const generatePropImage = async (
+  propType: string,
+  apiKey: string,
+  timeoutMs = 12000
+): Promise<string | null> => {
+  try {
+    // @ts-ignore — GoogleGenAI is a named ESM export at runtime; TypeScript Bundler moduleResolution mismatch with @google/genai types
+    const { GoogleGenAI } = await import("@google/genai");
+    const genAI = new GoogleGenAI({ apiKey });
+
+    const prompt =
+      `Draw a single prop object: "${propType}" for a children's Indian puppet theatre stage. ` +
+      `Style: 2D cartoon, warm earthy colors, clean bold outlines, simple flat shapes. ` +
+      `Composition: single object centered, fills 70% of image, plain solid white background #FFFFFF. ` +
+      `No text, no labels, no shadows, no scenery, no characters. Object only.`;
+
+    const withTimeout = <T>(p: Promise<T>): Promise<T | null> =>
+      Promise.race([p, new Promise<null>((res) => setTimeout(() => res(null), timeoutMs))]);
+
+    const response = await withTimeout(
+      genAI.models.generateContent({
+        model: "gemini-3.1-flash-image-preview",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: { responseModalities: ["IMAGE", "TEXT"] }
+      })
+    );
+
+    if (!response) return null;
+
+    for (const candidate of response.candidates ?? []) {
+      for (const part of candidate.content?.parts ?? []) {
+        if (part.inlineData?.mimeType?.startsWith("image/") && part.inlineData.data) {
+          return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
 };
 
 /**

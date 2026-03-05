@@ -1,9 +1,63 @@
 import { matchCharactersToLibrary } from "../tools/characterBrowser.js";
 import { compileAndRunPlay } from "../tools/playCompiler.js";
 import { type VoiceCasting } from "../tools/audioNarrator.js";
-import { generateExpressionVariants } from "../providerRouter.js";
-import type { ConversationSession, CharacterAsset } from "../types.js";
+import { generateExpressionVariants, generatePropImage } from "../providerRouter.js";
+import type { ExpressionMap, ConversationSession, CharacterAsset } from "../types.js";
 import type { TheatreAgent, AgentDeps, MessageHandler, RangmanchInput } from "./types.js";
+
+/**
+ * Scan a NatyaScript for EMOTE/GESTURE opcodes and determine which expression
+ * variants each character actually needs. Returns a Map of charId → Set of expression keys.
+ * Only generates what's used — saves Gemini API calls for unused expressions.
+ */
+const extractNeededExpressions = (natyaScript: string): Map<string, Set<keyof ExpressionMap>> => {
+  const needed = new Map<string, Set<keyof ExpressionMap>>();
+  const emotionToExpression: Record<string, keyof ExpressionMap> = {
+    joyful: "happy", dance: "happy",
+    angry: "angry", fight: "angry",
+    sad: "sad", fearful: "sad", kneel: "sad"
+  };
+
+  for (const line of natyaScript.split("\n")) {
+    const roleMatch = line.match(/role=(\S+)/);
+    const emotionMatch = line.match(/emotion=(\S+)/) ?? line.match(/gesture=(\S+)/);
+    if (!roleMatch || !emotionMatch) continue;
+
+    const charId = roleMatch[1];
+    const emotion = emotionMatch[1].toLowerCase();
+    const expressionKey = emotionToExpression[emotion];
+    if (!expressionKey) continue; // neutral or unknown — no variant needed
+
+    if (!needed.has(charId)) needed.set(charId, new Set());
+    needed.get(charId)!.add(expressionKey);
+  }
+
+  // BARGE_IN maps the chorus character to "angry"
+  for (const line of natyaScript.split("\n")) {
+    if (!line.includes("BARGE_IN")) continue;
+    const roleMatch = line.match(/chorusRole=(\S+)/);
+    if (roleMatch) {
+      if (!needed.has(roleMatch[1])) needed.set(roleMatch[1], new Set());
+      needed.get(roleMatch[1])!.add("angry");
+    }
+  }
+
+  return needed;
+};
+
+/**
+ * Scan a NatyaScript for PROP opcodes and return all unique propType values found.
+ * Used to pre-generate prop images via Gemini before the play starts.
+ */
+const extractPropTypes = (natyaScript: string): Set<string> => {
+  const propTypes = new Set<string>();
+  for (const line of natyaScript.split("\n")) {
+    if (!line.includes(" PROP ")) continue;
+    const match = line.match(/propType=(\S+)/);
+    if (match) propTypes.add(match[1]);
+  }
+  return propTypes;
+};
 
 /**
  * Rangmanch (रंगमंच) — the Stage Manager agent.
@@ -56,6 +110,11 @@ export const rangmanch: TheatreAgent<RangmanchInput, void> = {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const expressionPromises: Promise<any>[] = [];
 
+      // Analyze which expressions each character actually needs from the NatyaScript.
+      // Reason: avoids generating happy/angry/sad for characters that never use them,
+      // saving Gemini API calls and reducing latency before the play starts.
+      const neededExpressions = extractNeededExpressions(story.natyaScript);
+
       for (const [charId, asset] of characters) {
         onMessage({
           type: "character_portrait",
@@ -76,7 +135,10 @@ export const rangmanch: TheatreAgent<RangmanchInput, void> = {
         if (canGenerateExpressions && deps.config.apiKey) {
           // Find the story character for this charId to get the description.
           const storyChar = input.story.characters.find(c => c.charId === charId);
-          if (storyChar) {
+          const charNeeded = neededExpressions.get(charId);
+
+          // Only generate if the character has at least one expression variant in the script.
+          if (storyChar && charNeeded && charNeeded.size > 0) {
             const expressionPromise = generateExpressionVariants(
               asset.name,
               asset.archetype,
@@ -91,12 +153,28 @@ export const rangmanch: TheatreAgent<RangmanchInput, void> = {
                   expressionKey: key,
                   imageUrl
                 });
-              }
+              },
+              15000,
+              Array.from(charNeeded) as Array<keyof ExpressionMap>
             ).catch(() => {
               // Silent failure — neutral expression always available as fallback.
             });
             expressionPromises.push(expressionPromise);
           }
+        }
+      }
+
+      // Kick off prop image generation in parallel (non-blocking) for each unique propType
+      // in the NatyaScript. Images stream in via prop_image messages during the first beats.
+      // Canvas 2D fallback always available if Gemini is slow or unavailable.
+      if (deps.config.apiKey) {
+        const propTypes = extractPropTypes(story.natyaScript);
+        for (const propType of propTypes) {
+          generatePropImage(propType, deps.config.apiKey).then((imageUrl) => {
+            if (imageUrl) {
+              onMessage({ type: "prop_image", propType, imageUrl });
+            }
+          }).catch(() => { /* silent — Canvas 2D fallback always available */ });
         }
       }
 

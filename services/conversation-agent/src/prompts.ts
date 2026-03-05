@@ -207,10 +207,12 @@ Valid OPCODES:
 - NARRATE text=<narration_text> storyState=<invocation|temptation_peak|restoration>
 - SPEAK role=<charId> text=<dialogue_text>
 - GESTURE role=<charId> gesture=<bow|raise_arm|shake_head|dance|fight|kneel|joyful|angry|cunning|surprised|fearful|sad|walking|pick_up|throw|drink>
-- PROP prop=<uniqueId> propType=<pot|stone_pile|water_jug|fruit_basket|lamp> at=<left|center_left|center|center_right|right> [visible=<true|false>]
+- PROP prop=<uniqueId> propType=<object_name> at=<left|center_left|center|center_right|right> [visible=<true|false>]
   Places a visual prop object on stage at the given position (depth-scaled automatically).
-  Use visible=false to remove a prop (e.g. when all stones have been thrown).
-  Example: @3 PROP prop=pot1 propType=pot at=center_right
+  Use visible=false to remove a prop when it is consumed or no longer needed.
+  propType must be a short descriptive snake_case noun (e.g. pot, well, throne, sword, boat, scroll, fire_pit, stone_pile).
+  AI will generate an image for any propType you name — use whatever makes sense for the story.
+  Example: @3 PROP prop=throne1 propType=throne at=center
 - BARGE_IN chorusRole=<charId> text=<interjection>
 - ENTER role=<charId> from=<left|right> [to=<left|center_left|center|center_right|right>] [style=<walk|hop|crawl|sneak|run>]
 - EXIT role=<charId> to=<left|right> [style=<walk|hop|crawl|sneak|run>]
@@ -231,6 +233,7 @@ Valid OPCODES:
 - First line must be @1 SCENE_OPEN
 - Last 2 lines must include NARRATE storyState=restoration and SCENE_CLOSE
 - Characters must ENTER before they SPEAK — slide in from offscreen
+- DIALOGUE PUNCTUATION (CRITICAL for text-to-speech quality): All SPEAK and NARRATE text MUST use proper English punctuation — periods at end of sentences, commas for pauses, question marks for questions, exclamation marks for exclamations. Separate distinct sentences with proper punctuation. Example: "Hello, my friend. Those fruits look delicious!" NOT "Hello friend those fruits look delicious"
 
 **CHOREOGRAPHY RULES** (biped animated characters — FOLLOW THESE STRICTLY):
 - Characters must ENTER before their first SPEAK — walk in from stage left or right
@@ -267,33 +270,33 @@ Valid OPCODES:
 
 Example NatyaScript (theatrical with full choreography and walking animations):
 @1 SCENE_OPEN scene=river setting=A sunny riverbank with a large fruit tree and sparkling water
-@2 NARRATE text=By a wide river a clever monkey lived in a tall fruit tree storyState=invocation
+@2 NARRATE text=By a wide river, a clever monkey lived in a tall fruit tree. storyState=invocation
 @3 ENTER role=c_monkey from=left to=center_left
 @4 EMOTE role=c_monkey emotion=joyful
 @5 GESTURE role=c_monkey gesture=dance
-@6 SPEAK role=c_monkey text=What a beautiful day for some sweet fruits
+@6 SPEAK role=c_monkey text=What a beautiful day for some sweet fruits!
 @7 ENTER role=c_croc from=right to=center_right
 @8 EMOTE role=c_monkey emotion=surprised
 @9 EMOTE role=c_croc emotion=cunning
-@10 SPEAK role=c_croc text=Hello friend those fruits look delicious
+@10 SPEAK role=c_croc text=Hello, friend! Those fruits look delicious.
 @11 MOVE role=c_croc to=center
-@12 NARRATE text=The crocodile crept closer his plan already forming storyState=temptation_peak desireDelta=40
+@12 NARRATE text=The crocodile crept closer, his plan already forming. storyState=temptation_peak desireDelta=40
 @13 EMOTE role=c_croc emotion=joyful
-@14 SPEAK role=c_monkey text=Here catch some
+@14 SPEAK role=c_monkey text=Here, catch some!
 @15 GESTURE role=c_monkey gesture=raise_arm
 @16 EMOTE role=c_croc emotion=cunning
-@17 SPEAK role=c_croc text=Come to my home across the river for a feast
+@17 SPEAK role=c_croc text=Come to my home across the river for a feast!
 @18 EMOTE role=c_monkey emotion=cunning
-@19 SPEAK role=c_monkey text=I left my heart in the tree Let me go get it
+@19 SPEAK role=c_monkey text=I left my heart in the tree. Let me go get it!
 @20 MOVE role=c_monkey to=left
 @21 EMOTE role=c_croc emotion=surprised
-@22 SPEAK role=c_croc text=Hurry back friend
-@23 NARRATE text=But the wise monkey never returned storyState=restoration oathDelta=30
+@22 SPEAK role=c_croc text=Hurry back, friend!
+@23 NARRATE text=But the wise monkey never returned. storyState=restoration oathDelta=30
 @24 GESTURE role=c_monkey gesture=dance
 @25 EMOTE role=c_croc emotion=angry
 @26 GESTURE role=c_croc gesture=angry
 @27 EXIT role=c_croc to=right
-@28 SPEAK role=c_monkey text=A true friend would never want my heart
+@28 SPEAK role=c_monkey text=A true friend would never want my heart.
 @29 EXIT role=c_monkey to=left
 @30 SCENE_CLOSE scene=river
 
@@ -301,16 +304,16 @@ Example NatyaScript (physical actions with props — thirsty crow story):
 @1 SCENE_OPEN scene=riverside setting=A dry riverside with a half-filled earthen pot and scattered pebbles
 @2 PROP prop=pot1 propType=pot at=center_right
 @3 PROP prop=stones1 propType=stone_pile at=center_left
-@4 NARRATE text=A thirsty crow found a pot of water but could not reach it storyState=invocation
+@4 NARRATE text=A thirsty crow found a pot of water, but could not reach it. storyState=invocation
 @5 ENTER role=c_crow from=left to=center_left
 @6 EMOTE role=c_crow emotion=fearful
-@7 SPEAK role=c_crow text=The water is too low I cannot drink
+@7 SPEAK role=c_crow text=The water is too low. I cannot drink!
 @8 EMOTE role=c_crow emotion=cunning
-@9 NARRATE text=The clever crow had an idea storyState=temptation_peak
+@9 NARRATE text=The clever crow had an idea. storyState=temptation_peak
 @10 GESTURE role=c_crow gesture=pick_up
 @11 MOVE role=c_crow to=center_right
 @12 GESTURE role=c_crow gesture=throw
-@13 SPEAK role=c_crow text=One stone and the water rises a little
+@13 SPEAK role=c_crow text=One stone, and the water rises a little!
 @14 MOVE role=c_crow to=center_left
 @15 GESTURE role=c_crow gesture=pick_up
 @16 MOVE role=c_crow to=center_right
@@ -318,7 +321,7 @@ Example NatyaScript (physical actions with props — thirsty crow story):
 @18 PROP prop=stones1 visible=false
 @19 EMOTE role=c_crow emotion=joyful
 @20 GESTURE role=c_crow gesture=drink
-@21 NARRATE text=Patient effort and clever thinking rewarded the crow storyState=restoration
+@21 NARRATE text=Patient effort and clever thinking rewarded the crow. storyState=restoration
 @22 GESTURE role=c_crow gesture=joyful
 @23 EXIT role=c_crow to=right
 @24 SCENE_CLOSE scene=riverside

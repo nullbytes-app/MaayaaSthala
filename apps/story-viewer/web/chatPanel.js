@@ -325,6 +325,10 @@ export const createChatPanel = (container, options) => {
         // character_portrait events are consumed by the canvas renderer in main.js.
         break;
 
+      case "prop_image":
+        // prop_image events are consumed by the canvas renderer in main.js.
+        break;
+
       case "play_frame":
         // play_frame events are consumed by the canvas renderer, not the chat panel.
         break;

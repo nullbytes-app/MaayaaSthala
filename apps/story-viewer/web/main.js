@@ -137,6 +137,11 @@ if (chatMessagesEl) {
         chatRenderer?.setCharacterPortrait?.(charId, imageUrl, null, characterExpressions.get(charId));
         renderer?.setCharacterPortrait?.(charId, imageUrl, null, characterExpressions.get(charId));
       }
+      // Re-apply prop images — same pattern as portrait re-injection above.
+      for (const [propType, imageUrl] of propImages) {
+        chatRenderer?.registerPropImage?.(propType, imageUrl);
+        renderer?.registerPropImage?.(propType, imageUrl);
+      }
       chatLiveAdapter.stop();
       isPlayActive = true;
       const timelineEl = document.getElementById("timeline-output");
@@ -158,6 +163,8 @@ if (chatMessagesEl) {
   const characterPortraits = new Map();
   /** Track pre-generated expression maps per charId (for re-apply after reset). */
   const characterExpressions = new Map();
+  /** Track AI-generated prop images by propType for re-apply after reset. */
+  const propImages = new Map();
 
   // ===== Browser TTS for voice narration =====
   // Reason: when Google Cloud TTS audio is playing via <audio> element, the browser
@@ -391,6 +398,12 @@ if (chatMessagesEl) {
         // Also update cached expressions map for re-apply after reset.
         const existing = characterExpressions.get(message.charId) ?? { neutral: characterPortraits.get(message.charId) ?? "" };
         characterExpressions.set(message.charId, { ...existing, [message.expressionKey]: message.imageUrl });
+        // Don't send to chat panel
+      } else if (message.type === "prop_image") {
+        // AI-generated prop image — store for re-apply and register with both renderers.
+        propImages.set(message.propType, message.imageUrl);
+        chatRenderer?.registerPropImage?.(message.propType, message.imageUrl);
+        renderer?.registerPropImage?.(message.propType, message.imageUrl);
         // Don't send to chat panel
       } else if (message.type === "text" && isPlayActive) {
         // During play: route narration/dialogue to the correct stage overlay + browser TTS.
