@@ -82,6 +82,18 @@ export const createExpressionState = (charId) => ({
   isSpeaking: false,
   // Emotion pop: 1.0 on expression change, decays to 0 over ~250ms
   emotionPop: 0,
+  // Tracks what expression was REQUESTED even if image not yet loaded (race fix).
+  desiredKey: "neutral",
+  // Spring follow-through pixel offset for hair zone (4-zone segmentation).
+  hairOffset: 0,
+  // X position of character being looked at (gaze tracking).
+  gazeTargetX: 0,
+  // Current interpolated gaze horizontal offset in pixels.
+  gazeOffsetX: 0,
+  // Radians of head tilt on emotion change.
+  emotionTilt: 0,
+  // Vertical offset for sad (drooping) emotion.
+  emotionTiltOffsetY: 0,
   // One-shot physical gesture overlay animation (uses performance.now() like enterTime/blink)
   gestureType: null,       // "pick_up" | "throw" | "drink" | null
   gestureStartedAt: null   // performance.now() timestamp when gesture triggered
@@ -97,9 +109,13 @@ export const createExpressionState = (charId) => ({
  */
 export const addExpression = (state, key, canvas) => {
   state.expressions.set(key, canvas);
-  // If this is the target expression and we don't have it yet, trigger crossfade.
-  if (key === state.targetKey && state.currentKey !== key) {
+  // If this matches the desired expression that was previously unavailable, trigger now.
+  // Reason: EMOTE may arrive before Gemini finishes generating the expression image.
+  // desiredKey remembers the intent; when the image finally loads we start the crossfade.
+  if (state.desiredKey === key && state.currentKey !== key) {
+    state.targetKey = key;
     state.crossfadeProgress = 0;
+    state.emotionPop = 1.0;
   }
 };
 
@@ -121,13 +137,30 @@ export const triggerGesture = (state, gestureType) => {
  * @param {object} state - Expression state.
  * @param {string} key - Target expression key.
  */
+const TILT_MAP = { happy: 0.02, sad: -0.01, angry: 0, neutral: 0 };
+
 export const setTargetExpression = (state, key) => {
+  state.desiredKey = key;  // always remember intent even if image not loaded yet
   const resolvedKey = state.expressions.has(key) ? key : "neutral";
-  if (resolvedKey === state.currentKey) return;
+  if (resolvedKey === state.currentKey && resolvedKey === state.targetKey) return;
   state.targetKey = resolvedKey;
   state.crossfadeProgress = 0;
   // Trigger emotion pop burst when expression actually changes.
   state.emotionPop = 1.0;
+  // Emotion-driven head tilt (decays over ~800ms in drawCharacter).
+  state.emotionTilt = TILT_MAP[resolvedKey] ?? 0;
+  state.emotionTiltOffsetY = resolvedKey === "sad" ? 2 : 0;
+};
+
+/**
+ * Set the gaze target X position (another character's stage position).
+ * The face zone will subtly shift toward this position during drawing.
+ *
+ * @param {object} state - Expression state.
+ * @param {number} targetX - X position to look toward.
+ */
+export const setGazeTarget = (state, targetX) => {
+  state.gazeTargetX = targetX;
 };
 
 /**
@@ -318,8 +351,8 @@ export const drawCharacter = (ctx, state, beat, dt, slotX, slotY, slotW, slotH, 
   // Entry squash/stretch.
   const { scaleX: entryScaleX, scaleY: entryScaleY } = getEntrySquash(state);
 
-  // Combined vertical scale.
-  const totalScaleY = breathScale * (1 + speakPulse) * entryScaleY;
+  // Combined vertical scale — breathing is now torso-local (4-zone segmentation).
+  const totalScaleY = (1 + speakPulse) * entryScaleY;
   const totalScaleX = entryScaleX; // horizontal scale only from entry
 
   // Contain-fit: draw image within slot, anchored at bottom (feet).
@@ -361,7 +394,7 @@ export const drawCharacter = (ctx, state, beat, dt, slotX, slotY, slotW, slotH, 
 
   // Translate to feet anchor; scale transforms are applied relative to this point.
   // walkBob is subtracted because canvas Y increases downward — subtracting moves character UP.
-  ctx.translate(slotX, slotY + breathLift + speakBob - walkBob);
+  ctx.translate(slotX, slotY + speakBob - walkBob);
 
   // Idle sway — desynchronized per character using charId char code as phase offset.
   // Reason: without a phase offset every character sways in unison, which looks mechanical.
@@ -388,19 +421,37 @@ export const drawCharacter = (ctx, state, beat, dt, slotX, slotY, slotW, slotH, 
   const drawX = -drawW / 2;
   const drawY = -drawH; // anchored at bottom (feet)
 
-  // Head/body split — draw portrait in two parts so the head can bob independently
-  // during speech without moving the body. headFraction=0.40 matches typical portrait
-  // composition where the face occupies the top ~40% of a full-body image.
-  const headFraction = 0.40; // top 40% = head; bottom 60% = body
+  // 4-zone body segmentation for independent micro-animations per body region.
+  // Hair trails behind body sway (spring follow-through), face bobs + gazes,
+  // torso breathes independently, legs stay anchored.
+  const ZONE_HAIR  = 0.15;  // 0–15%: hair/crown
+  const ZONE_FACE  = 0.40;  // 15–40%: face
+  const ZONE_TORSO = 0.75;  // 40–75%: torso
+  // 75–100%: legs/base (remainder)
 
-  // Speaking head bob: independent sinusoidal offset at 3Hz — faster than the
-  // whole-body speakBob (2Hz) so it reads as mouth/jaw movement rather than
-  // body sway. Amplitude kept at ±1.5px to stay subtle.
+  // Speaking head bob: 3Hz independent of whole-body speakBob (2Hz).
   const headBob = state.isSpeaking ? Math.sin(beat * 3) * 1.5 : 0;
 
+  // Per-frame spring/gaze/tilt updates (reuses swayPhase from idle sway above).
+  const bodySway = Math.sin(beat * 0.3 + swayPhase) * 3;
+  state.hairOffset += (bodySway - state.hairOffset) * 0.04; // spring follow-through
+
+  if (state.gazeTargetX !== 0) {
+    const gazeDir = Math.sign(state.gazeTargetX - slotX);
+    state.gazeOffsetX += (gazeDir * 4 - state.gazeOffsetX) * 0.03;
+  }
+
+  // Emotion tilt decay (~800ms).
+  if (Math.abs(state.emotionTilt) > 0.001) state.emotionTilt *= Math.max(0, 1 - dt * 1.25);
+  if (Math.abs(state.emotionTiltOffsetY) > 0.01) state.emotionTiltOffsetY *= Math.max(0, 1 - dt * 1.25);
+
+  // Torso-local breathing: horizontal chest expansion only.
+  const torsoBreathScaleX = 1.0 + Math.sin(beat * 0.5) * 0.008;
+
   /**
-   * Draw a single portrait canvas split into body (bottom 60%) then head (top 40%).
-   * Head gets a vertical headBob offset; body stays anchored to transform origin.
+   * Draw a single portrait canvas in 4 independent zones:
+   * legs (anchored), torso (breathing), face (bob + gaze + tilt), hair (spring follow-through).
+   * Each zone overlaps by 1px to prevent sub-pixel seam gaps.
    *
    * @param {HTMLCanvasElement} canvas - Portrait canvas to draw.
    */
@@ -408,23 +459,57 @@ export const drawCharacter = (ctx, state, beat, dt, slotX, slotY, slotW, slotH, 
     const cW = canvas.width || canvas.naturalWidth || drawW;
     const cH = canvas.height || canvas.naturalHeight || drawH;
 
-    const headSrcH  = Math.floor(cH * headFraction);
-    const bodySrcH  = cH - headSrcH;
-    const headDrawH = Math.floor(drawH * headFraction);
-    const bodyDrawH = drawH - headDrawH;
+    // Source pixel boundaries.
+    const hairSrcEnd  = Math.floor(cH * ZONE_HAIR);
+    const faceSrcEnd  = Math.floor(cH * ZONE_FACE);
+    const torsoSrcEnd = Math.floor(cH * ZONE_TORSO);
 
-    // Body (bottom 60%) — drawn first so head overlaps the seam naturally.
+    // Destination pixel boundaries (match source proportions to drawH).
+    const hairDrawH  = Math.floor(drawH * ZONE_HAIR);
+    const faceDrawH  = Math.floor(drawH * (ZONE_FACE - ZONE_HAIR));
+    const torsoDrawH = Math.floor(drawH * (ZONE_TORSO - ZONE_FACE));
+    const legsDrawH  = drawH - hairDrawH - faceDrawH - torsoDrawH;
+
+    // 1. Legs (75–100%) — fully anchored, no transform.
+    const legsSrcY = torsoSrcEnd;
+    const legsSrcH = cH - torsoSrcEnd;
+    const legsDestY = drawY + hairDrawH + faceDrawH + torsoDrawH;
+    ctx.drawImage(canvas, 0, legsSrcY, cW, legsSrcH, drawX, legsDestY, drawW, legsDrawH);
+
+    // 2. Torso (40–75%) — breathing via horizontal chest expansion.
+    const torsoSrcY = faceSrcEnd;
+    const torsoSrcH = torsoSrcEnd - faceSrcEnd;
+    const torsoDestY = drawY + hairDrawH + faceDrawH;
+    ctx.save();
+    const torsoCenterX = drawX + drawW / 2;
+    const torsoCenterY = torsoDestY + torsoDrawH / 2;
+    ctx.translate(torsoCenterX, torsoCenterY);
+    ctx.scale(torsoBreathScaleX, 1.0);
+    ctx.translate(-torsoCenterX, -torsoCenterY);
+    ctx.drawImage(canvas, 0, torsoSrcY, cW, torsoSrcH + 1, drawX, torsoDestY - 1, drawW, torsoDrawH + 2);
+    ctx.restore();
+
+    // 3. Face (15–40%) — headBob + gazeOffsetX + emotionTilt rotation.
+    const faceSrcY = hairSrcEnd;
+    const faceSrcH = faceSrcEnd - hairSrcEnd;
+    const faceDestY = drawY + hairDrawH;
+    ctx.save();
+    const faceCenterX = drawX + drawW / 2 + state.gazeOffsetX;
+    const faceCenterY = faceDestY + faceDrawH / 2 + headBob + state.emotionTiltOffsetY;
+    ctx.translate(faceCenterX, faceCenterY);
+    ctx.rotate(state.emotionTilt);
+    ctx.translate(-faceCenterX, -faceCenterY);
     ctx.drawImage(
-      canvas,
-      0, headSrcH, cW, bodySrcH,            // source: bottom 60%
-      drawX, drawY + headDrawH, drawW, bodyDrawH  // dest: lower portion of slot
+      canvas, 0, faceSrcY, cW, faceSrcH + 1,
+      drawX + state.gazeOffsetX, faceDestY + headBob + state.emotionTiltOffsetY - 1, drawW, faceDrawH + 2
     );
+    ctx.restore();
 
-    // Head (top 40%) — offset by headBob when speaking.
+    // 4. Hair (0–15%) — spring follow-through from body sway + headBob.
+    const hairSrcH = hairSrcEnd;
     ctx.drawImage(
-      canvas,
-      0, 0, cW, headSrcH,                   // source: top 40%
-      drawX, drawY + headBob, drawW, headDrawH    // dest: upper portion with bob
+      canvas, 0, 0, cW, hairSrcH + 1,
+      drawX + state.hairOffset, drawY + headBob - 1, drawW, hairDrawH + 2
     );
   };
 

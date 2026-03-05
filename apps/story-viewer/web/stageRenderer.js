@@ -14,6 +14,7 @@ import {
   createExpressionState,
   addExpression,
   setTargetExpression,
+  setGazeTarget,
   drawCharacter,
   resolveExpression,
   updateCrossfade,
@@ -407,14 +408,14 @@ export const createStageRenderer = (canvas) => {
       const propImg = state.propImages.get(artifact.propType);
       if (propImg?.complete && propImg.naturalWidth > 0) {
         // AI-generated image: draw centered at (x, y) with depth scale applied.
-        const w = 80 * scale;
-        const h = 100 * scale;
+        const w = 120 * scale;
+        const h = 140 * scale;
         ctx.save();
         ctx.drawImage(propImg, artifact.x - w / 2, artifact.y - h, w, h);
         ctx.restore();
       } else {
-        // Canvas 2D fallback — works for the 6 known types, silent no-op for unknown.
-        drawPropSVG(ctx, artifact.propType, artifact.x, artifact.y, scale);
+        // Canvas 2D fallback — 1.6x multiplier brings 60×80 base into rough parity with AI 120×140.
+        drawPropSVG(ctx, artifact.propType, artifact.x, artifact.y, scale * 1.6);
       }
     }
 
@@ -604,6 +605,13 @@ export const createStageRenderer = (canvas) => {
       if (role && role !== "narrator") {
         const currentMood = moodEngine.getCurrentMood?.() || "normal";
         speechBubbles.setSpeechBubble(role, text || "", payload.emotion || currentMood);
+      }
+      // Make all OTHER characters gaze toward the speaker.
+      const speakerX = artifact.x;
+      for (const [otherId, otherArt] of Object.entries(state.artifacts)) {
+        if (otherId === artifactId || otherArt.isProp) continue;
+        const otherCharId = otherArt.charId || otherId;
+        setGazeTarget(getExprState(otherCharId), speakerX);
       }
     }
 
