@@ -360,6 +360,7 @@ if (chatMessagesEl) {
     onAgentMessage: (message) => {
       // Route canvas-specific events to renderer; everything else to chat panel.
       if (message.type === "stage_command") {
+        if (!isPlayActive) return; // Skip commands when paused
         handleStageCommand(message.command, (charId) => {
           // SPEAK stage_command arrives right after the dialogue text message.
           // stageRenderer uses payload.text (only the first word — NatyaScript parser
