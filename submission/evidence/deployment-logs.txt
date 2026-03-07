@@ -1,0 +1,25 @@
+submission/evidence/deployment-logs.txt
+Source command: gcloud run services logs read maayaasthala --platform managed --region asia-south1 --limit 60
+Captured: 2026-03-07T03:38:22Z
+Notes:
+- Recent Cloud Run service log extract for `maayaasthala` in `asia-south1`.
+- Lines were filtered to keep deployment and healthy runtime proof concise.
+- Base64 audio payload lines were intentionally omitted to avoid noisy, low-value output.
+- A trailing direct `GET /` probe that returned `404` was excluded because it reflects root-path behavior rather than the viewer flow; the viewer and websocket lines below remained healthy.
+
+2026-03-07 03:29:34 [backdrop] SCENE_OPEN beat 19: setting="A grand, eerie palace under a full moon, with tall", hasPromise=true
+2026-03-07 03:29:34 [backdrop] SCENE_OPEN beat 19: result=source=gemini
+2026-03-07 03:29:38 [audioNarrator] resolveVoiceConfig speaker="narrator" found=true voice=en-IN-Chirp3-HD-Enceladus
+2026-03-07 03:29:43 GET 101 https://maayaasthala-942680040818.asia-south1.run.app/ws/chat
+2026-03-07 03:29:51 [audioNarrator] resolveVoiceConfig speaker="c_rakshasa" found=true voice=en-IN-Chirp3-HD-Fenrir
+2026-03-07 03:29:59 [audioNarrator] resolveVoiceConfig speaker="c_arjun" found=true voice=en-IN-Chirp3-HD-Puck
+2026-03-07 03:30:08 [audioNarrator] resolveVoiceConfig speaker="narrator" found=true voice=en-IN-Chirp3-HD-Enceladus
+2026-03-07 03:30:22 [audioNarrator] resolveVoiceConfig speaker="c_rakshasa" found=true voice=en-IN-Chirp3-HD-Fenrir
+2026-03-07 03:30:31 [audioNarrator] resolveVoiceConfig speaker="narrator" found=true voice=en-IN-Chirp3-HD-Enceladus
+2026-03-07 03:30:44 [audioNarrator] resolveVoiceConfig speaker="c_arjun" found=true voice=en-IN-Chirp3-HD-Puck
+2026-03-07 03:30:46 GET 101 https://maayaasthala-942680040818.asia-south1.run.app/ws/chat
+2026-03-07 03:30:59 GET 101 https://maayaasthala-942680040818.asia-south1.run.app/ws/chat
+2026-03-07 03:32:02 GET 101 https://maayaasthala-942680040818.asia-south1.run.app/ws/chat
+2026-03-07 03:32:22 GET 101 https://maayaasthala-942680040818.asia-south1.run.app/ws/chat
+2026-03-07 03:32:48 GET 101 https://maayaasthala-942680040818.asia-south1.run.app/ws/chat
+2026-03-07 03:33:03 GET 101 https://maayaasthala-942680040818.asia-south1.run.app/ws/chat

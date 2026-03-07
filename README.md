@@ -1,194 +1,154 @@
-# Story AI
+# MaayaaSthala — AI Puppet Theatre
 
-This repository contains a prototype pipeline for command-driven storytelling:
+MaayaaSthala is a live AI puppet theatre that turns a story request into a staged Indian folklore performance. Gemini-powered agents write the tale, assemble the cast, and perform it in the browser with narration, visuals, and animation.
 
-- story analysis + character resolution
-- NatyaScript screenplay compilation to stage commands
-- gRPC ingest + WebSocket stage gateway
-- runtime mythic execution (invocation -> temptation peak -> restoration)
-- telemetry artifacts (replay, playbill, cinema capture, overlay)
+## Why this is different
 
-## Visual MVP (Casting Studio + Viewer)
+This is not a chatbot that replies with a block of text and a few generated assets. The experience moves through a live show pipeline:
 
-Start the demo server (`start:demo` is an alias of `start:resolver`):
+1. You ask for a story.
+2. The system pitches the story for approval.
+3. You confirm the cast.
+4. The agents perform the final story as a staged multimodal production.
 
-```bash
-pnpm start:demo
-```
+Built for the [Gemini Live Agent Challenge](https://geminiliveagentchallenge.devpost.com/) — Creative Storyteller category. For the full challenge package, see `submission/README.md`.
 
-Then open:
+## Project Links
 
-- `http://127.0.0.1:8080/viewer`
+<!-- Live Project / Submission / Proof -->
 
-The Casting Studio is embedded directly in the viewer controls panel.
+- Live experience: [Open the viewer](https://maayaasthala.nullbytes.app/viewer)
+- Challenge materials: [Submission hub](submission/README.md) | [Devpost description](submission/devpost-description.md) | [Demo script](submission/demo-script.md)
+- Technical materials: [Cloud setup + proof notes](submission/cloud-proof-script.md) | [Architecture diagram](submission/architecture/architecture-diagram.png) | [Cloud Run console proof](submission/evidence/cloud-run-console.png)
 
-### Viewer flow
-
-1. Edit the **Story Draft** fields (Story ID, style, language, story text, Natya script)
-2. **Load Story** -> calls `/v1/casting/prepare`
-3. **Generate Cast** (optional) -> calls `/v1/casting/generate`
-4. Select candidates per character and **Play** -> calls `/v1/casting/approve`
-5. Playback executes via `/v1/demo/run`
-
-Playback modes:
-
-- **Replay**: deterministic frame playback from ordered replay commands
-- **Live (simulated)**: command-by-command timed streaming through the live adapter
-
-## Demo Runner Endpoint
-
-`POST /v1/demo/run` executes the full demo flow and returns replay artifacts in one response.
-
-### Run local resolver server
+## Quick Start
 
 ```bash
+# 1. Install dependencies
+pnpm install
+
+# 2. Set your Gemini API key
+export GEMINI_API_KEY="your-key-here"
+export CONVERSATION_AGENT_ENABLED=true
+export GOOGLE_CLOUD_TTS_ENABLED=true  # optional, for narration audio
+
+# 3. Start the server
 pnpm start:resolver
 ```
 
-Equivalent demo alias:
+Open `http://127.0.0.1:8080/viewer` and type "Tell me a Panchatantra story about a clever crow."
+
+## How It Works
+
+You type a story request. Three agents hand the show off in sequence:
+
+1. **Sutradhar** writes the folklore story beat and NatyaScript screenplay with Gemini 2.5 Flash
+2. **Chitrakar** builds the cast from the character library or generates missing puppets with 4 expression variants
+3. **You approve the cast** to move the experience from planning into performance
+4. **Rangmanch** compiles the screenplay into stage cues and stages the live show with streamed text, visuals, audio, and animation in the browser
+
+## Architecture
+
+```
+Browser ←→ WebSocket ←→ Cloud Run (Resolver + Conversation Agent)
+                              ↓
+                    Theatre Orchestrator (State Machine)
+                    ├── Sutradhar  → Story Generator (Gemini 2.5 Flash)
+                    ├── Chitrakar → Character Browser + Generator (Gemini Image Gen)
+                    └── Rangmanch → Play Compiler + Audio Narrator (Cloud TTS)
+                              ↓
+                    14+ message types streamed over WebSocket
+                              ↓
+                    HTML5 Canvas Stage
+                    ├── Expression Engine (4-zone crossfade)
+                    ├── Mood Engine (atmospheric lighting)
+                    └── Cinematic Effects (pan/zoom/shake)
+```
+
+See `submission/architecture/architecture-diagram.png` for the architecture overview, `submission/architecture/architecture-diagram.excalidraw` for the editable source, and `submission/architecture/architecture-notes.md` for the companion notes.
+
+## Features
+
+- **Approval-gated story flow** — prompt, story pitch, cast confirmation, then live performance
+- **4 expression variants per character** — neutral, happy, angry, sad with crossfade animation
+- **AI-generated props and backdrops** — unique images for each story
+- **Character-aware narration** — per-character voice casting with Indian English delivery for the staged performance
+- **Cinematic rendering** — camera pan/zoom/shake, mood-based atmospheric lighting
+- **5 folklore traditions** — Panchatantra, Chandamama, Vikram-Betaal, Tenali Raman, regional folk tales
+
+## Project Structure
+
+```
+apps/
+  story-runtime/          # NatyaScript compiler + MythicEngine runtime
+  story-viewer/           # Web viewer (HTML5 canvas, chat panel, expression engine)
+
+services/
+  conversation-agent/     # Multi-turn conversational ADK agent
+    src/
+      agent.ts            # LlmAgent + InMemoryRunner setup
+      agents/             # Sutradhar, Chitrakar, Rangmanch + Orchestrator
+      tools/              # Story generator, character browser/gen, play compiler, audio, scene illustrator
+      prompts.ts          # System prompt + 5 folklore templates
+      types.ts            # 14+ AgentStreamMessage types
+      providerRouter.ts   # Image generation routing (Gemini, Vertex AI, fallbacks)
+  resolver/               # HTTP server + WebSocket handler
+  agent-orchestrator/     # ADK model gateway
+  stage-gateway/          # gRPC ingest + WebSocket broadcast
+
+packages/
+  contracts/              # JSON schemas
+
+submission/               # Devpost materials, deployment helpers, architecture assets
+```
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GEMINI_API_KEY` | Yes* | Gemini API key |
+| `CONVERSATION_AGENT_ENABLED` | Yes | Set to `true` to enable the conversational agent |
+| `GOOGLE_CLOUD_TTS_ENABLED` | No | Set to `true` for Cloud TTS narration |
+| `GOOGLE_CLOUD_PROJECT` | For Vertex AI | GCP project ID |
+| `GOOGLE_CLOUD_LOCATION` | For Vertex AI | GCP region (e.g., `asia-south1`) |
+| `GOOGLE_GENAI_USE_VERTEXAI` | For Vertex AI | Set to `true` to use Vertex AI instead of API key |
+| `AGENTIC_MODEL` | No | Override model (default: `gemini-2.5-flash`) |
+
+*Either `GEMINI_API_KEY` or Vertex AI configuration is required.
+
+## GCP Deployment Guide
+
+Deploy to Cloud Run with the helper script:
 
 ```bash
-pnpm start:demo
+./submission/deploy.sh YOUR_PROJECT_ID asia-south1
 ```
 
-Optional env vars:
+This helper script enables the required GCP APIs, configures WebSocket session affinity, and sets the core environment variables for Cloud Run. See [submission/gcp-deployment-checklist.md](submission/gcp-deployment-checklist.md) for the step-by-step checklist and verification details.
 
-- `PORT` (default: `8080`)
-- `MAX_BODY_BYTES` (default: `1048576`)
-- `STITCH_GENERATE_URL` (optional; when set, casting generation calls this HTTP endpoint instead of the local stub client)
-- `STITCH_TIMEOUT_MS` (optional; HTTP adapter request timeout in milliseconds, default: `5000`)
-- `STITCH_MAX_RETRIES` (optional; retry count for transient HTTP failures/timeouts, default: `1`)
-- `STITCH_RETRY_BASE_MS` (optional; base retry delay in milliseconds for exponential backoff, default: `200`)
-- `STITCH_RETRY_JITTER_MS` (optional; random jitter added per retry in milliseconds, default: `100`)
-- `STITCH_AUTH_BEARER_TOKEN` (optional; when set, sends `Authorization: Bearer <token>` to `STITCH_GENERATE_URL`)
-- `AGENTIC_MODEL` (optional; default: `gemini-2.5-flash`)
-- `GEMINI_API_KEY`, `GOOGLE_GENAI_API_KEY`, or `GOOGLE_API_KEY` (optional; enables Gemini API mode for ADK model gateway)
-- `GOOGLE_GENAI_USE_VERTEXAI=true` with `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` (optional; enables Vertex AI mode for ADK model gateway)
-- `MODEL_GATEWAY_MAX_JSON_ATTEMPTS` (optional; retries model JSON generation on transient/format errors, default: `3`)
-- `MODEL_GATEWAY_RETRY_BACKOFF_MS` (optional; linear retry backoff base in milliseconds, default: `200`)
-
-### Agentic feature flags
-
-Resolver keeps legacy behavior by default and enables agentic paths per route when these flags are set to `true`:
-
-- `AGENTIC_ANALYZE_ENABLED` -> enables ADK-backed analyze workflow, falls back to legacy analyze when gateway/workflow is unavailable
-- `AGENTIC_CASTING_ENABLED` -> enables ADK-backed casting ranking and generation workflow path, falls back to deterministic baseline ranking/generation
-- `AGENTIC_RUN_ENABLED` -> enables stage-director primary artifact selection during `/v1/demo/run`
-
-When no model gateway auth env vars are set, resolver keeps compatibility mode and falls back to deterministic legacy behavior even if agentic flags are enabled.
-
-### Local agentic smoke commands
-
-Run the compatibility E2E (prepare -> generate -> approve -> run) with all agentic flags enabled:
+## Tests
 
 ```bash
-AGENTIC_ANALYZE_ENABLED=true \
-AGENTIC_CASTING_ENABLED=true \
-AGENTIC_RUN_ENABLED=true \
-pnpm test:agentic
+pnpm test
 ```
 
-Run the full test suite in agentic mode:
+Vitest covers the conversation flow, tool behavior, orchestrator state machine, and runtime contracts. Run the suite locally before deployment or submission updates.
 
-```bash
-AGENTIC_ANALYZE_ENABLED=true \
-AGENTIC_CASTING_ENABLED=true \
-AGENTIC_RUN_ENABLED=true \
-pnpm test -- --run
-```
+## Technical Stack
 
-`test:agentic` runs `services/resolver/tests/agentic-compat.e2e.spec.ts` directly.
+- **Gemini 2.5 Flash** — story generation, NatyaScript generation, structured JSON
+- **Google ADK** — multi-agent orchestration across Sutradhar, Chitrakar, Rangmanch, and the conversation flow
+- **Google GenAI SDK** — Gemini model access and generation tooling
+- **WebSocket streaming** — live agent and stage updates from Cloud Run to the browser viewer across 14+ real-time message types
+- **Google Cloud TTS** — deployed narration with Indian English Chirp3-HD voices, with evidence captured in `submission/evidence/deployment-logs.txt`
+- **Google Cloud Run** — deployment target for the resolver and conversation agent with WebSocket support
+- **Gemini Image Generation** — character portraits, expression variants, props, scene backdrops
+- **Runtime & tooling** — TypeScript, Node.js, `ws`, HTML5 Canvas, Vitest, and zod
 
-Cloud Run deploy guide for resolver runtime: `docs/deploy/cloud-run-agent-orchestrator.md`.
+## License
 
-### Stitch adapter contract
+MIT
 
-When `STITCH_GENERATE_URL` is configured, resolver sends this request payload:
+## Author
 
-```json
-{
-  "storyId": "story_casting_2",
-  "style": "leather-shadow",
-  "character": {
-    "charId": "c_raju",
-    "name": "Raju",
-    "archetype": "hero"
-  }
-}
-```
-
-The adapter should return either a root array of candidates or an object with `generatedCandidates`.
-
-The viewer uses each selected candidate's `previewUrl` as the first-choice texture source during canvas rendering, and falls back to procedural leather texturing when preview assets are unavailable.
-
-For local stub demos, resolver serves deterministic placeholder preview assets at `/generated/<artifactId>.png`.
-
-Retries use exponential backoff plus jitter for retryable adapter failures (`5xx`, `429`, `408`) and timeouts.
-
-Recommended response shape:
-
-```json
-{
-  "generatedCandidates": [
-    {
-      "candidateId": "cand_http_1",
-      "artifactId": "hero_raju_http_v1",
-      "previewUrl": "https://cdn.example.test/hero_raju_http_v1.png",
-      "source": "generated",
-      "partsManifest": {
-        "parts": ["head", "torso", "left_arm", "right_arm"]
-      }
-    }
-  ]
-}
-```
-
-### Optional real Stitch smoke test
-
-The repository includes an opt-in integration smoke test in `services/resolver/tests/stitch-client.spec.ts`.
-
-Run it against a real endpoint by setting `STITCH_REAL_SMOKE_URL`:
-
-```bash
-STITCH_REAL_SMOKE_URL="https://your-stitch-endpoint.example/generate" \
-STITCH_AUTH_BEARER_TOKEN="your-token-if-needed" \
-pnpm test services/resolver/tests/stitch-client.spec.ts --run
-```
-
-### Request body
-
-```json
-{
-  "storyId": "demo_story_1",
-  "language": "en",
-  "style": "leather-shadow",
-  "text": "Raju met Elder and faced his shadow before returning to his vow.",
-  "script": "@0 SCENE_OPEN rasa=adbhuta tala=adi\n@0 NARRATE storyState=invocation oathDelta=5\n@1 BARGE_IN chorusRole=elder intent=warn window=1-2\n@2 NARRATE storyState=temptation_peak shadowDouble=true oathDelta=-35 desireDelta=70\n@3 NARRATE storyState=restoration oathDelta=20 desireDelta=-30\n@4 SCENE_CLOSE nextSceneId=next_scene"
-}
-```
-
-### Curl example
-
-```bash
-curl -sS -X POST "http://127.0.0.1:8080/v1/demo/run" \
-  -H "content-type: application/json" \
-  -d '{
-    "storyId": "demo_story_1",
-    "language": "en",
-    "style": "leather-shadow",
-    "text": "Raju met Elder and faced his shadow before returning to his vow.",
-    "script": "@0 SCENE_OPEN rasa=adbhuta tala=adi\n@0 NARRATE storyState=invocation oathDelta=5\n@1 BARGE_IN chorusRole=elder intent=warn window=1-2\n@2 NARRATE storyState=temptation_peak shadowDouble=true oathDelta=-35 desireDelta=70\n@3 NARRATE storyState=restoration oathDelta=20 desireDelta=-30\n@4 SCENE_CLOSE nextSceneId=next_scene"
-  }'
-```
-
-### Response fields
-
-- `storyId`
-- `analyzed`
-- `resolution`
-- `ack`
-- `replay`
-- `playbill`
-- `cinema`
-- `overlay`
-- `runtimeReport`
+Ravi Kumar Sriram — [github.com/nullbytes-app](https://github.com/nullbytes-app)

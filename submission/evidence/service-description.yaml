@@ -1,0 +1,63 @@
+# submission/evidence/service-description.yaml
+# Source: `gcloud run services describe maayaasthala --platform managed --region asia-south1 --format=yaml`
+# Captured: 2026-03-07T03:38:22Z
+# Notes:
+# - This is a curated submission-safe extract, not the full raw service document.
+# - Nonessential personal and infrastructure identifiers are redacted or omitted.
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: maayaasthala
+  labels:
+    cloud.googleapis.com/location: asia-south1
+spec:
+  template:
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      containers:
+        - env:
+            - name: CONVERSATION_AGENT_ENABLED
+              value: 'true'
+            - name: GOOGLE_CLOUD_TTS_ENABLED
+              value: 'true'
+            - name: AGENTIC_ANALYZE_ENABLED
+              value: 'true'
+            - name: AGENTIC_CASTING_ENABLED
+              value: 'true'
+            - name: AGENTIC_RUN_ENABLED
+              value: 'true'
+            - name: AGENTIC_MODEL
+              value: gemini-2.5-flash
+            - name: GOOGLE_CLOUD_PROJECT
+              value: REDACTED_PROJECT_ID
+            - name: GOOGLE_CLOUD_LOCATION
+              value: asia-south1
+            - name: MODEL_GATEWAY_MAX_JSON_ATTEMPTS
+              value: '3'
+            - name: MODEL_GATEWAY_RETRY_BACKOFF_MS
+              value: '200'
+            - name: GEMINI_API_KEY
+              value: REDACTED
+            - name: STITCH_MCP_AVAILABLE
+              value: 'false'
+          image: REDACTED_IMAGE_REFERENCE
+          resources:
+            limits:
+              cpu: '1'
+              memory: 1Gi
+status:
+  latestReadyRevisionName: maayaasthala-00005-jwr
+  url: REDACTED_PLATFORM_ALIAS
+  traffic:
+    - revisionName: maayaasthala-00005-jwr
+      percent: 100
+      latestRevision: true
+  conditions:
+    - type: Ready
+      status: 'True'
+    - type: ConfigurationsReady
+      status: 'True'
+    - type: RoutesReady
+      status: 'True'
