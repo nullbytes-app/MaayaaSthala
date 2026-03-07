@@ -11,8 +11,8 @@
 - `requirements-audit.md`
 - `judging-criteria-checklist.md`
 - `devpost-description.md`
-- `demo-script.md`
-- `cloud-proof-script.md`
+- `demo-script.md`, `cloud-proof-script.md` - cue-sheet scripts for demo flow and cloud-proof capture
+- `demo-teleprompter.md`, `cloud-proof-teleprompter.md` - spoken teleprompter scripts for recording
 - `gcp-deployment-checklist.md`
 - `blog-post.md`
 - `architecture/`
