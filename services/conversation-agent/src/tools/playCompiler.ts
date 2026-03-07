@@ -349,6 +349,7 @@ export const compileAndRunPlay = async (
   for (let i = 0; i < commands.length; i++) {
     const command = commands[i];
     const scriptLine = scriptLines[i] ?? "";
+    process.stderr.write(`{"event":"beat_started","storyId":"${story.storyId}","beat":${command.beat},"opcode":"${command.opcode}"}\n`);
 
     // SCENE_OPEN: wait for the in-flight backdrop generation (started before beat loop).
     // Reason: 15s timeout because Gemini image generation takes 7-10s for a full backdrop.
@@ -419,12 +420,24 @@ export const compileAndRunPlay = async (
 
         // Await audio so the beat delay can be driven by audio duration.
         if (audioEnabled && beatDelayMs > 0) {
-          const audioResult = await narrateText(text, command.beat, {
-            gcpProject: options.gcpProject,
-            voiceType: "narrator",
-            speaker: "narrator",
-            voiceCasting: options.voiceCasting
-          }).catch(() => null);
+          process.stderr.write(`{"event":"tts_start","storyId":"${story.storyId}","beat":${command.beat},"speaker":"narrator"}\n`);
+          // 12s outer timeout covers import + client init + synthesize.
+          // The inner 10s timer in callGoogleCloudTts only covers synthesizeSpeech,
+          // not TextToSpeechClient instantiation which can hang on Cloud Run cold starts.
+          const audioResult = await Promise.race([
+            narrateText(text, command.beat, {
+              gcpProject: options.gcpProject,
+              voiceType: "narrator",
+              speaker: "narrator",
+              voiceCasting: options.voiceCasting
+            }).catch(() => null),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 12_000))
+          ]);
+          if (audioResult === null) {
+            process.stderr.write(`{"event":"tts_timeout","storyId":"${story.storyId}","beat":${command.beat},"speaker":"narrator"}\n`);
+          } else {
+            process.stderr.write(`{"event":"tts_success","storyId":"${story.storyId}","beat":${command.beat},"speaker":"narrator"}\n`);
+          }
 
           if (audioResult?.source === "google_cloud_tts" && audioResult.audioUrl) {
             onMessage({
@@ -465,12 +478,22 @@ export const compileAndRunPlay = async (
       if (text && beatDelayMs > 0) {
         // Await character dialogue audio.
         if (audioEnabled) {
-          const audioResult = await narrateText(text, command.beat, {
-            gcpProject: options.gcpProject,
-            voiceType: "character",
-            speaker: speakerCharId,
-            voiceCasting: options.voiceCasting
-          }).catch(() => null);
+          process.stderr.write(`{"event":"tts_start","storyId":"${story.storyId}","beat":${command.beat},"speaker":"${speakerCharId}"}\n`);
+          // 12s outer timeout covers import + client init + synthesize.
+          const audioResult = await Promise.race([
+            narrateText(text, command.beat, {
+              gcpProject: options.gcpProject,
+              voiceType: "character",
+              speaker: speakerCharId,
+              voiceCasting: options.voiceCasting
+            }).catch(() => null),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 12_000))
+          ]);
+          if (audioResult === null) {
+            process.stderr.write(`{"event":"tts_timeout","storyId":"${story.storyId}","beat":${command.beat},"speaker":"${speakerCharId}"}\n`);
+          } else {
+            process.stderr.write(`{"event":"tts_success","storyId":"${story.storyId}","beat":${command.beat},"speaker":"${speakerCharId}"}\n`);
+          }
 
           if (audioResult?.source === "google_cloud_tts" && audioResult.audioUrl) {
             onMessage({
@@ -511,6 +534,7 @@ export const compileAndRunPlay = async (
     if (beatDelayMs > 0) {
       await sleep(calculateBeatDelay(command.opcode) + peakBonus);
     }
+    process.stderr.write(`{"event":"beat_completed","storyId":"${story.storyId}","beat":${command.beat},"opcode":"${command.opcode}"}\n`);
   }
 
   return commands;

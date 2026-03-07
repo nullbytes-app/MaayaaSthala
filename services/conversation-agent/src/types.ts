@@ -182,4 +182,10 @@ export type ConversationSession = {
    * Reason: prevents overlapping approval loops and state corruption under rapid input.
    */
   activeTurn: Promise<void>;
+  /**
+   * Mutable send callback pointing at the currently-active WebSocket socket.
+   * Replaced on every reconnect (session_resume) so an ongoing play's onMessage
+   * can redirect output to the new socket without needing to restart the play.
+   */
+  activeSend?: (message: AgentStreamMessage) => void;
 };

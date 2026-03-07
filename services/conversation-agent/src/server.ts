@@ -110,6 +110,22 @@ export const attachChatWebSocketServer = (
     // Send session start — client should store this ID for reconnect.
     sendToClient(socket, { type: "session_start", sessionId: session.sessionId });
 
+    // Point the session's mutable send callback at this socket.
+    // Updated on every session_resume so an ongoing play's onMessage
+    // redirects to the new socket without restarting the play.
+    session.activeSend = (msg) => sendToClient(socket, { type: "agent_stream", payload: msg });
+
+    // Keep WebSocket alive through Cloud Run's hard 300s request timeout.
+    // Cloud Run kills all connections at exactly 300s regardless of activity.
+    // Pinging every 30s ensures the connection is classified as active and
+    // produces log events for correlating stalls vs. idle disconnects.
+    const pingInterval = setInterval(() => {
+      if (socket.readyState === WebSocket.OPEN) {
+        process.stderr.write(`{"event":"ws_ping","sessionId":"${session.sessionId}"}\n`);
+        socket.ping();
+      }
+    }, 30_000);
+
     socket.on("message", async (data: WebSocket.RawData) => {
       const message = parseInboundMessage(data);
 
@@ -122,6 +138,11 @@ export const attachChatWebSocketServer = (
             const existing = sessionStore.get(raw.sessionId);
             if (existing) {
               session = existing;
+              // Redirect any ongoing play's messages to this new socket.
+              // Reason: Cloud Run kills WebSocket connections at 300s hard limit.
+              // The play's onMessage closes over `session.activeSend`, so updating
+              // it here causes in-flight beats to be delivered to the reconnected client.
+              session.activeSend = (msg) => sendToClient(socket, { type: "agent_stream", payload: msg });
               // Confirm resumed session — client updates its stored ID to the old one,
               // preventing ID drift across reconnects.
               sendToClient(socket, { type: "session_start", sessionId: session.sessionId });
@@ -165,11 +186,12 @@ export const attachChatWebSocketServer = (
       // Serialize per session: chain each turn onto session.activeTurn so concurrent
       // WebSocket messages execute sequentially and don't corrupt approval state.
       if (message.type === "user_message") {
+        // Route through session.activeSend rather than closing over the current socket.
+        // When Cloud Run kills this connection and the client reconnects, session_resume
+        // updates activeSend to point at the new socket — so the ongoing play
+        // automatically delivers to the reconnected client without restarting.
         const onMessage = (agentMessage: AgentStreamMessage): void => {
-          sendToClient(socket, {
-            type: "agent_stream",
-            payload: agentMessage
-          });
+          session.activeSend?.(agentMessage);
         };
 
         const content = message.content;
@@ -228,12 +250,18 @@ export const attachChatWebSocketServer = (
       }
     });
 
-    socket.on("close", () => {
+    socket.on("close", (code, reason) => {
+      clearInterval(pingInterval);
+      process.stderr.write(
+        `{"event":"ws_close","sessionId":"${session.sessionId}","code":${code},"reason":"${String(reason)}"}\n`
+      );
       // Session persists across reconnections — only purge after TTL expires.
     });
 
-    socket.on("error", () => {
-      // Silently handle socket errors to prevent server crash.
+    socket.on("error", (error) => {
+      process.stderr.write(
+        `{"event":"ws_error","sessionId":"${session.sessionId}","error":"${error instanceof Error ? error.message : String(error)}"}\n`
+      );
     });
   });
 
